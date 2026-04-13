@@ -76,7 +76,7 @@ impl Output {
         data: &T,
         out: &mut dyn Write,
     ) -> io::Result<()> {
-        tracing::info!(command = command, "output.success");
+        tracing::debug!(command = command, "output.success");
         match self.mode {
             OutputMode::Human => writeln!(out, "{data}"),
             OutputMode::Json => {
@@ -101,7 +101,7 @@ impl Output {
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> io::Result<()> {
-        tracing::error!(command = command, error = err_msg, "output.error");
+        tracing::debug!(command = command, error = err_msg, "output.error");
         match self.mode {
             OutputMode::Human => writeln!(stderr, "Error: {err_msg}"),
             OutputMode::Json => {
