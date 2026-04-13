@@ -80,10 +80,8 @@ impl Output {
         match self.mode {
             OutputMode::Human => writeln!(out, "{data}"),
             OutputMode::Json => {
-                let envelope = Envelope::success(command, data)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                serde_json::to_writer_pretty(&mut *out, &envelope)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let envelope = Envelope::success(command, data).map_err(io::Error::other)?;
+                serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
                 writeln!(out)
             }
         }
@@ -106,8 +104,7 @@ impl Output {
             OutputMode::Human => writeln!(stderr, "Error: {err_msg}"),
             OutputMode::Json => {
                 let envelope = Envelope::error(command, err_msg);
-                serde_json::to_writer_pretty(&mut *stdout, &envelope)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                serde_json::to_writer_pretty(&mut *stdout, &envelope).map_err(io::Error::other)?;
                 writeln!(stdout)
             }
         }
@@ -156,7 +153,10 @@ mod tests {
             count: u32,
             name: String,
         }
-        let data = Custom { count: 42, name: "test".to_string() };
+        let data = Custom {
+            count: 42,
+            name: "test".to_string(),
+        };
         let envelope = Envelope::success("cmd", &data).unwrap();
         assert_eq!(envelope.status, Status::Success);
         assert_eq!(envelope.data.as_ref().unwrap()["count"], 42);
@@ -194,14 +194,18 @@ mod tests {
     }
 
     fn test_data(s: &str) -> TestData {
-        TestData { value: s.to_string() }
+        TestData {
+            value: s.to_string(),
+        }
     }
 
     #[test]
     fn human_success_writes_display_to_writer() {
         let output = Output::new(OutputMode::Human);
         let mut buf = Vec::new();
-        output.success("test", &test_data("hello world"), &mut buf).unwrap();
+        output
+            .success("test", &test_data("hello world"), &mut buf)
+            .unwrap();
         assert_eq!(String::from_utf8(buf).unwrap(), "hello world\n");
     }
 
@@ -209,7 +213,9 @@ mod tests {
     fn json_success_writes_envelope_to_writer() {
         let output = Output::new(OutputMode::Json);
         let mut buf = Vec::new();
-        output.success("ping", &test_data("hello"), &mut buf).unwrap();
+        output
+            .success("ping", &test_data("hello"), &mut buf)
+            .unwrap();
         let envelope: Envelope = serde_json::from_slice(&buf).unwrap();
         assert_eq!(envelope.status, Status::Success);
         assert_eq!(envelope.command, "ping");
@@ -221,9 +227,14 @@ mod tests {
         let output = Output::new(OutputMode::Human);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        output.error("test", "something broke", &mut stdout, &mut stderr).unwrap();
+        output
+            .error("test", "something broke", &mut stdout, &mut stderr)
+            .unwrap();
         assert!(stdout.is_empty(), "human error should not write to stdout");
-        assert_eq!(String::from_utf8(stderr).unwrap(), "Error: something broke\n");
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "Error: something broke\n"
+        );
     }
 
     #[test]
@@ -231,7 +242,9 @@ mod tests {
         let output = Output::new(OutputMode::Json);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        output.error("test", "something broke", &mut stdout, &mut stderr).unwrap();
+        output
+            .error("test", "something broke", &mut stdout, &mut stderr)
+            .unwrap();
         assert!(stderr.is_empty(), "json error should not write to stderr");
         let envelope: Envelope = serde_json::from_slice(&stdout).unwrap();
         assert_eq!(envelope.status, Status::Error);
@@ -253,7 +266,9 @@ mod tests {
         let output = Output::new(OutputMode::Json);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        output.error("cmd", "fail", &mut stdout, &mut stderr).unwrap();
+        output
+            .error("cmd", "fail", &mut stdout, &mut stderr)
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
         assert!(parsed.is_object());
     }

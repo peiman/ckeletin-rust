@@ -1,7 +1,5 @@
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{
-    fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
-};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 /// Guard that must be held for the lifetime of the application.
 /// Dropping it flushes the non-blocking log file writer.
@@ -39,8 +37,8 @@ impl Default for LogConfig {
 ///
 /// Returns a guard that must be held until shutdown (flushes file writer).
 pub fn init(config: &LogConfig) -> Result<LogGuard, Box<dyn std::error::Error>> {
-    let stderr_filter = EnvFilter::try_new(&config.console_level)
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let stderr_filter =
+        EnvFilter::try_new(&config.console_level).unwrap_or_else(|_| EnvFilter::new("info"));
 
     let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)
@@ -62,8 +60,8 @@ pub fn init(config: &LogConfig) -> Result<LogGuard, Box<dyn std::error::Error>> 
         let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-        let file_filter = EnvFilter::try_new(&config.file_level)
-            .unwrap_or_else(|_| EnvFilter::new("debug"));
+        let file_filter =
+            EnvFilter::try_new(&config.file_level).unwrap_or_else(|_| EnvFilter::new("debug"));
 
         let file_layer = fmt::layer()
             .json()

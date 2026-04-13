@@ -62,7 +62,7 @@ impl Config {
     /// Missing config file is not an error — defaults apply.
     /// figment's provenance tracking gives clear error messages
     /// on misconfiguration (stronger than Viper's interface{}).
-    pub fn load(config_path: Option<&str>) -> Result<Self, figment::Error> {
+    pub fn load(config_path: Option<&str>) -> Result<Self, Box<figment::Error>> {
         let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
 
         if let Some(path) = config_path {
@@ -75,6 +75,7 @@ impl Config {
         figment
             .merge(Env::prefixed("CKELETIN_").split("_"))
             .extract()
+            .map_err(Box::new)
     }
 }
 

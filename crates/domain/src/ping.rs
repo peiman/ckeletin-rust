@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn ping_serializes() {
-        let json = serde_json::to_value(&execute()).unwrap();
+        let json = serde_json::to_value(execute()).unwrap();
         assert_eq!(json["message"], "ckeletin-rust is alive");
     }
 }
