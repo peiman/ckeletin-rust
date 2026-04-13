@@ -16,10 +16,10 @@ fn main() {
 }
 
 fn run() -> i32 {
-    // Parse CLI args first — we need to know if --json is active
+    // Parse CLI args first — we need to know the output format
     // before we can route errors correctly.
     let cli = root::Cli::parse();
-    let json_mode = cli.json;
+    let json_mode = matches!(cli.output, root::OutputFormat::Json);
 
     match run_inner(cli) {
         Ok(()) => 0,
@@ -46,8 +46,9 @@ fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration (defaults → file → env)
     let config = Config::load(cli.config.as_deref())?;
 
-    // Determine output mode: CLI flag overrides config
-    let json_mode = cli.json || config.json;
+    // Determine output mode: CLI flag overrides config.
+    // --output json on CLI takes precedence. Config json=true is fallback.
+    let json_mode = matches!(cli.output, root::OutputFormat::Json) || config.json;
 
     // Determine log level: --verbose overrides config
     let log_level = if cli.verbose {

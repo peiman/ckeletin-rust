@@ -35,7 +35,7 @@ fn ping_human_mode() {
 #[test]
 fn ping_json_mode_has_success_status() {
     cmd()
-        .args(["--json", "ping"])
+        .args(["--output", "json", "ping"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"status\": \"success\""));
@@ -44,7 +44,7 @@ fn ping_json_mode_has_success_status() {
 #[test]
 fn ping_json_mode_has_command_name() {
     cmd()
-        .args(["--json", "ping"])
+        .args(["--output", "json", "ping"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"command\": \"ping\""));
@@ -53,7 +53,7 @@ fn ping_json_mode_has_command_name() {
 #[test]
 fn ping_json_mode_has_data() {
     cmd()
-        .args(["--json", "ping"])
+        .args(["--output", "json", "ping"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -64,7 +64,7 @@ fn ping_json_mode_has_data() {
 #[test]
 fn ping_json_mode_no_stderr_noise() {
     cmd()
-        .args(["--json", "ping"])
+        .args(["--output", "json", "ping"])
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
@@ -86,7 +86,13 @@ fn unknown_subcommand_fails() {
 fn json_mode_bad_config_produces_json_error_on_stdout() {
     // CKSPEC-OUT-002: errors in JSON mode MUST be JSON envelopes on stdout
     cmd()
-        .args(["--json", "--config", "/nonexistent/config.toml", "ping"])
+        .args([
+            "--output",
+            "json",
+            "--config",
+            "/nonexistent/config.toml",
+            "ping",
+        ])
         .assert()
         .failure()
         .stdout(predicate::str::contains("\"status\": \"error\""))
@@ -97,7 +103,13 @@ fn json_mode_bad_config_produces_json_error_on_stdout() {
 fn json_mode_error_has_no_stderr() {
     // JSON mode: stderr must be clean even on errors
     cmd()
-        .args(["--json", "--config", "/nonexistent/config.toml", "ping"])
+        .args([
+            "--output",
+            "json",
+            "--config",
+            "/nonexistent/config.toml",
+            "ping",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::is_empty());
@@ -117,7 +129,7 @@ fn human_mode_error_goes_to_stderr() {
 fn json_verbose_no_stderr_leak() {
     // --json + --verbose: verbose must not leak debug logs to stderr
     cmd()
-        .args(["--json", "--verbose", "ping"])
+        .args(["--output", "json", "--verbose", "ping"])
         .assert()
         .success()
         .stderr(predicate::str::is_empty());

@@ -8,7 +8,7 @@ Key characteristics:
 - **Workspace with 3 crates:** `domain` (business logic), `infrastructure` (config, logging, output), `cli` (entry + commands)
 - **Compile-time architecture enforcement:** Crate boundaries in Cargo.toml prevent reverse dependencies. Violation tests prove it (CKSPEC-ENF-006)
 - **Three-stream output:** stdout (data), stderr (status), log file (audit)
-- **JSON mode:** `--json` flag for machine-readable output on every command
+- **JSON mode:** `--output json` flag for machine-readable output on every command
 - **Shadow logging:** Every output operation logged to audit stream
 - **Layered configuration:** defaults → TOML file → environment variables → CLI flags
 - **TDD:** Tests first, always. 85% minimum coverage
