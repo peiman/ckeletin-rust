@@ -33,5 +33,5 @@ build:
     cargo build --release
 
 # Run conformance check (CKSPEC-ENF-005/006/007)
-conform:
-    ./scripts/conform.sh
+conform *ARGS:
+    cargo run -p ckeletin-conform -q -- {{ARGS}}
