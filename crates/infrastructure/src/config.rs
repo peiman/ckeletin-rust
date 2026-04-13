@@ -62,10 +62,14 @@ impl Config {
     /// Missing config file is not an error — defaults apply.
     /// figment's provenance tracking gives clear error messages
     /// on misconfiguration (stronger than Viper's interface{}).
-    pub fn load(config_path: Option<&str>) -> Result<Self, Box<figment::Error>> {
+    pub fn load(config_path: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
 
         if let Some(path) = config_path {
+            // Explicit --config: file MUST exist. Silent fallback is misleading.
+            if !std::path::Path::new(path).exists() {
+                return Err(format!("config file not found: {path}").into());
+            }
             figment = figment.merge(Toml::file(path));
         } else {
             // Default location — missing file is silently ignored
@@ -75,7 +79,7 @@ impl Config {
         figment
             .merge(Env::prefixed("CKELETIN_").split("_"))
             .extract()
-            .map_err(Box::new)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 }
 
@@ -128,5 +132,16 @@ mod tests {
         writeln!(file, "not valid toml [[[").unwrap();
         let result = Config::load(Some(file.path().to_str().unwrap()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn explicit_missing_file_returns_error() {
+        let result = Config::load(Some("/nonexistent/config.toml"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("not found"),
+            "Error should mention file not found: {err}"
+        );
     }
 }

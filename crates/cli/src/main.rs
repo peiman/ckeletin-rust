@@ -16,17 +16,34 @@ fn main() {
 }
 
 fn run() -> i32 {
-    match run_inner() {
+    // Parse CLI args first — we need to know if --json is active
+    // before we can route errors correctly.
+    let cli = root::Cli::parse();
+    let json_mode = cli.json;
+
+    match run_inner(cli) {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("Error: {e}");
+            // CKSPEC-OUT-002: errors in JSON mode MUST be JSON envelopes on stdout.
+            // Errors in human mode go to stderr.
+            let output = Output::new(if json_mode {
+                OutputMode::Json
+            } else {
+                OutputMode::Human
+            });
+            let _ = output.error(
+                "init",
+                &e.to_string(),
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+            );
             1
         }
     }
 }
 
-fn run_inner() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = root::Cli::parse();
+fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
+    // Load configuration (defaults → file → env)
     let config = Config::load(cli.config.as_deref())?;
 
     // Determine output mode: CLI flag overrides config

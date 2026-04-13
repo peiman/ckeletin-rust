@@ -79,3 +79,46 @@ fn no_subcommand_shows_error() {
 fn unknown_subcommand_fails() {
     cmd().arg("nonexistent").assert().failure();
 }
+
+// ── Error path tests (robustness) ─────────────────────────────
+
+#[test]
+fn json_mode_bad_config_produces_json_error_on_stdout() {
+    // CKSPEC-OUT-002: errors in JSON mode MUST be JSON envelopes on stdout
+    cmd()
+        .args(["--json", "--config", "/nonexistent/config.toml", "ping"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("\"status\": \"error\""))
+        .stdout(predicate::str::contains("\"error\""));
+}
+
+#[test]
+fn json_mode_error_has_no_stderr() {
+    // JSON mode: stderr must be clean even on errors
+    cmd()
+        .args(["--json", "--config", "/nonexistent/config.toml", "ping"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn human_mode_error_goes_to_stderr() {
+    // Human mode: errors go to stderr, not stdout
+    cmd()
+        .args(["--config", "/nonexistent/config.toml", "ping"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Error"));
+}
+
+#[test]
+fn json_verbose_no_stderr_leak() {
+    // --json + --verbose: verbose must not leak debug logs to stderr
+    cmd()
+        .args(["--json", "--verbose", "ping"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
