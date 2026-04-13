@@ -1,0 +1,15 @@
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `ckeletin_infrastructure`
+ --> tests/violations/domain_imports_infrastructure.rs:5:5
+  |
+5 | use ckeletin_infrastructure::output::Output;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `ckeletin_infrastructure`
+  |
+  = help: if you wanted to use a crate named `ckeletin_infrastructure`, use `cargo add ckeletin_infrastructure` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `ckeletin_infrastructure`
+ --> tests/violations/domain_imports_infrastructure.rs:8:25
+  |
+8 |     let _ = Output::new(ckeletin_infrastructure::output::OutputMode::Human);
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `ckeletin_infrastructure`
+  |
+  = help: if you wanted to use a crate named `ckeletin_infrastructure`, use `cargo add ckeletin_infrastructure` to add it to your `Cargo.toml`
