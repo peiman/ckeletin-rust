@@ -31,3 +31,7 @@ deny:
 # Build release binary
 build:
     cargo build --release
+
+# Run conformance check (CKSPEC-ENF-005/006/007)
+conform:
+    ./scripts/conform.sh

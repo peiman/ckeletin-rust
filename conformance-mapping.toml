@@ -1,0 +1,315 @@
+# Conformance mapping: maps automated checks to CKSPEC requirement IDs.
+# Used by `just conform` to generate the conformance report.
+# Format agreed between ckeletin-go and ckeletin-rust architects.
+
+spec_version = "0.3.0"
+
+# ═══════════════════════════════════════════════════════════════
+# Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-ARCH-001]
+title = "Four-layer architecture"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Cargo workspace: crates/domain, crates/infrastructure, crates/cli"
+checks = ["cargo check --workspace"]
+violation_tests = []
+
+[requirements.CKSPEC-ARCH-002]
+title = "Directed dependencies"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Domain Cargo.toml has no infrastructure/cli deps. Infra has no domain/cli deps."
+checks = ["cargo check --workspace"]
+violation_tests = ["crates/domain/tests/violations/domain_imports_infrastructure.rs"]
+
+[requirements.CKSPEC-ARCH-003]
+title = "CLI framework isolation"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Only cli/Cargo.toml lists clap. Domain and infrastructure cannot import it."
+checks = ["cargo check --workspace"]
+violation_tests = [
+    "crates/domain/tests/violations/domain_imports_clap.rs",
+    "crates/infrastructure/tests/violations/infra_imports_clap.rs",
+]
+
+[requirements.CKSPEC-ARCH-004]
+title = "Business logic isolation"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Domain crate depends only on serde. No cross-domain, infra, or framework imports."
+checks = ["cargo check --workspace"]
+violation_tests = [
+    "crates/domain/tests/violations/domain_imports_figment.rs",
+    "crates/domain/tests/violations/domain_imports_tracing.rs",
+]
+
+[requirements.CKSPEC-ARCH-005]
+title = "Infrastructure independence"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Infrastructure Cargo.toml has no domain or cli dependency."
+checks = ["cargo check --workspace"]
+violation_tests = ["crates/infrastructure/tests/violations/infra_imports_domain.rs"]
+
+[requirements.CKSPEC-ARCH-006]
+title = "Entry point minimality"
+status = "met"
+enforcement_level = "design"
+evidence = "crates/cli/src/main.rs is ~20 lines. Bootstrap only."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ARCH-007]
+title = "Package location enforcement"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "All source in designated crate directories. Workspace structure enforces this."
+checks = ["cargo check --workspace"]
+violation_tests = []
+
+# ═══════════════════════════════════════════════════════════════
+# Enforcement (CKSPEC-ENF-001 through CKSPEC-ENF-007)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-ENF-001]
+title = "Automated enforcement required"
+status = "met"
+enforcement_level = "ci"
+evidence = "lefthook pre-commit (fmt, clippy), cargo-deny, CI via just check"
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ENF-002]
+title = "Enforcement ladder"
+status = "met"
+enforcement_level = "design"
+evidence = "6 compile-time, 5 pre-commit/CI, 3 honor-system. See enforcement audit table."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ENF-003]
+title = "Document enforcement gaps"
+status = "met"
+enforcement_level = "design"
+evidence = "CONFORMANCE.md enforcement audit table documents all gaps."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ENF-004]
+title = "Enforcement audit table"
+status = "met"
+enforcement_level = "design"
+evidence = "CONFORMANCE.md contains enforcement audit table."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ENF-005]
+title = "Conformance mapping completeness"
+status = "met"
+enforcement_level = "script"
+evidence = "scripts/conform.sh validates mapping covers all 35 spec requirements before reporting."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-ENF-006]
+title = "Violation tests for enforcement claims"
+status = "met"
+enforcement_level = "script"
+evidence = "6 trybuild violation tests for compile-time claims. just conform verifies violation_tests exist for claims above honor-system."
+checks = ["cargo test --workspace"]
+violation_tests = []
+
+[requirements.CKSPEC-ENF-007]
+title = "Automatic feedback signals"
+status = "met"
+enforcement_level = "script"
+evidence = "scripts/conform.sh outputs feedback signals for missing violation tests and checkable requirements without checks."
+checks = []
+violation_tests = []
+
+# ═══════════════════════════════════════════════════════════════
+# Testing (CKSPEC-TEST-001 through CKSPEC-TEST-004)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-TEST-001]
+title = "Test-driven development"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "TDD enforced via AGENTS.md and CLAUDE.md. Cannot automate intent."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-TEST-002]
+title = "Minimum coverage threshold"
+status = "met"
+enforcement_level = "ci"
+evidence = "just coverage enforces 85% via cargo-llvm-cov."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-TEST-003]
+title = "Dependency injection over mocking"
+status = "met"
+enforcement_level = "design"
+evidence = "Writer injection in Output. No mock frameworks in Cargo.lock."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-TEST-004]
+title = "Atomic test commits"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "Enforced via AGENTS.md and CLAUDE.md. Cannot automate grouping."
+checks = []
+violation_tests = []
+
+# ═══════════════════════════════════════════════════════════════
+# Output (CKSPEC-OUT-001 through CKSPEC-OUT-005)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-OUT-001]
+title = "Three-stream output separation"
+status = "met"
+enforcement_level = "script"
+evidence = "output.rs: stdout (data), stderr (tracing status), log file (tracing audit)."
+checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+violation_tests = []
+
+[requirements.CKSPEC-OUT-002]
+title = "Machine-readable output mode"
+status = "met"
+enforcement_level = "script"
+evidence = "--json flag. Integration tests verify JSON envelope on stdout."
+checks = ["cargo test -p ckeletin-cli --test cli"]
+violation_tests = []
+
+[requirements.CKSPEC-OUT-003]
+title = "Standardized output envelope"
+status = "met"
+enforcement_level = "script"
+evidence = "Envelope struct: status, command, data, error. Unit tests verify serialization."
+checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+violation_tests = []
+
+[requirements.CKSPEC-OUT-004]
+title = "Shadow logging"
+status = "met"
+enforcement_level = "script"
+evidence = "tracing::debug! in Output::success() and Output::error(). Lands in file layer."
+checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+violation_tests = []
+
+[requirements.CKSPEC-OUT-005]
+title = "Output isolation from business logic"
+status = "met"
+enforcement_level = "compile-time"
+evidence = "Domain crate has no std::io path. Cannot write to stdout."
+checks = ["cargo check --workspace"]
+violation_tests = ["crates/domain/tests/violations/domain_imports_infrastructure.rs"]
+
+# ═══════════════════════════════════════════════════════════════
+# Agent Readiness (CKSPEC-AGENT-001 through CKSPEC-AGENT-005)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-AGENT-001]
+title = "Universal agent guide"
+status = "met"
+enforcement_level = "script"
+evidence = "AGENTS.md exists with required sections."
+checks = ["test -f AGENTS.md"]
+violation_tests = []
+
+[requirements.CKSPEC-AGENT-002]
+title = "No provider-specific content in universal guide"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "AGENTS.md reviewed — no provider-specific content."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-AGENT-003]
+title = "Provider-specific guides follow provider guidance"
+status = "met"
+enforcement_level = "script"
+evidence = "CLAUDE.md exists, references AGENTS.md."
+checks = ["test -f CLAUDE.md"]
+violation_tests = []
+
+[requirements.CKSPEC-AGENT-004]
+title = "Agent guide completeness"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "AGENTS.md covers: purpose, architecture, commands, conventions, testing, troubleshooting."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-AGENT-005]
+title = "CLI as the agent interface"
+status = "met"
+enforcement_level = "script"
+evidence = "--json flag provides machine-readable output. No protocol layer required."
+checks = ["cargo test -p ckeletin-cli --test cli"]
+violation_tests = []
+
+# ═══════════════════════════════════════════════════════════════
+# Changelog (CKSPEC-CL-001 through CKSPEC-CL-007)
+# ═══════════════════════════════════════════════════════════════
+
+[requirements.CKSPEC-CL-001]
+title = "CHANGELOG.md in repository root"
+status = "met"
+enforcement_level = "script"
+evidence = "CHANGELOG.md exists at root."
+checks = ["test -f CHANGELOG.md"]
+violation_tests = []
+
+[requirements.CKSPEC-CL-002]
+title = "Keep a Changelog format"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "CHANGELOG.md follows Keep a Changelog format."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-CL-003]
+title = "ISO 8601 dates"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "All dates use YYYY-MM-DD format."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-CL-004]
+title = "Semantic Versioning"
+status = "met"
+enforcement_level = "design"
+evidence = "Cargo.toml version field. CHANGELOG states SemVer adherence."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-CL-005]
+title = "Unreleased section"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "[Unreleased] section at top of CHANGELOG.md."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-CL-006]
+title = "Human-curated, not auto-generated"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "Changelog entries hand-written."
+checks = []
+violation_tests = []
+
+[requirements.CKSPEC-CL-007]
+title = "Version comparison links"
+status = "met"
+enforcement_level = "honor-system"
+evidence = "Reference-style links at bottom of CHANGELOG.md."
+checks = []
+violation_tests = []
