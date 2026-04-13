@@ -80,6 +80,23 @@ crates/
 
 5. **Commit atomically:** Test + implementation in one commit (CKSPEC-TEST-004)
 
+> **Common Mistake: Discovery logic in infrastructure.**
+> The natural instinct is to put system discovery (running external processes, querying
+> system state) in infrastructure because it uses infrastructure tools like process
+> runners. But if that discovery code returns domain types, it creates an
+> infrastructure -> domain dependency, violating CKSPEC-ARCH-005. The correct pattern:
+> infrastructure provides generic tools (e.g., `process::run_capture`), and the **CLI
+> layer** uses those tools to run commands and construct domain types from the results.
+> Infrastructure never imports domain.
+
+> **Domain types without business logic is valid.**
+> Sometimes a command's domain layer is just typed data structures with
+> `#[derive(Serialize)]` + `impl Display` — no computation, no validation, just
+> structured output types. That is fine. The "logic" is orchestration in the CLI layer:
+> calling infrastructure tools, building domain types from results, and passing them to
+> `Output`. Not every domain module needs algorithms; sometimes its value is giving the
+> pipeline a typed contract instead of raw strings.
+
 ## Coding Conventions
 
 - **Domain has zero framework deps.** If you need logging in domain, return data and let the CLI layer log it.
