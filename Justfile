@@ -26,7 +26,7 @@ clippy:
 
 # Run cargo-deny checks (licenses, advisories)
 deny:
-    cargo deny check 2>/dev/null || echo "cargo-deny: install with 'cargo install cargo-deny'"
+    cargo deny check
 
 # Build release binary
 build:

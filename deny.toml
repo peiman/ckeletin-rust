@@ -1,4 +1,8 @@
 # cargo-deny configuration (CKSPEC-ENF-001)
+# v0.19+ format: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
 
 [licenses]
 allow = [
@@ -17,9 +21,7 @@ multiple-versions = "warn"
 wildcards = "allow"
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
+ignore = []
 
 [sources]
 unknown-registry = "deny"
