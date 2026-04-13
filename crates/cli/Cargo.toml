@@ -1,0 +1,21 @@
+[package]
+name = "ckeletin-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ckeletin-rust"
+path = "src/main.rs"
+
+# CLI crate: the ONLY crate that depends on both domain and infrastructure.
+# This is where directed dependencies converge (CKSPEC-ARCH-002).
+[dependencies]
+ckeletin-domain = { path = "../domain" }
+ckeletin-infrastructure = { path = "../infrastructure" }
+clap = { workspace = true }
+owo-colors = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }

@@ -1,0 +1,20 @@
+[package]
+name = "ckeletin-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# ENFORCEMENT: Only serde. No clap, no figment, no tracing, no infrastructure.
+# This Cargo.toml IS the enforcement mechanism for:
+#   CKSPEC-ARCH-003 (CLI framework isolation)
+#   CKSPEC-ARCH-004 (Business logic isolation)
+#   CKSPEC-ARCH-005 (Infrastructure independence — reverse direction)
+# If domain code tries `use clap::Parser` → compile error.
+# Violation tests in crates/domain/tests/ verify this (CKSPEC-ENF-006).
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+trybuild = { workspace = true }

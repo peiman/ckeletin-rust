@@ -1,0 +1,25 @@
+[package]
+name = "ckeletin-infrastructure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# ENFORCEMENT: No dependency on domain or cli.
+# This Cargo.toml IS the enforcement mechanism for:
+#   CKSPEC-ARCH-005 (Infrastructure independence)
+#   CKSPEC-ARCH-002 (Directed dependencies — infra cannot reach up)
+# Violation tests verify this (CKSPEC-ENF-006).
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+figment = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rstest = { workspace = true }
+trybuild = { workspace = true }

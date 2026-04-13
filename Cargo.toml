@@ -1,0 +1,38 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/peiman/ckeletin-rust"
+
+[workspace.dependencies]
+# Serialization — cross-cutting concern permitted in domain (CKSPEC-ARCH-004 notes)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI framework — ONLY in cli crate (CKSPEC-ARCH-003)
+clap = { version = "4", features = ["derive", "env"] }
+
+# Configuration — infrastructure concern (CKSPEC-ARCH-003 notes)
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Logging — infrastructure concern
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-appender = "0.2"
+
+# Error handling
+thiserror = "2"
+
+# Terminal styling
+owo-colors = "4"
+
+# Dev dependencies
+assert_cmd = "2"
+predicates = "3"
+rstest = "0.26"
+tempfile = "3"
+trybuild = "1"
