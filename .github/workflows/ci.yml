@@ -29,16 +29,14 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Format check
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Tests
-        run: cargo test --workspace
+      - name: Install just
+        run: cargo install just --locked
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
-      - name: Dependency check
-        run: cargo deny check
+
+      # SSOT: `just check` is the single gateway.
+      # Same checks run locally (lefthook + just) and in CI.
+      # If you add a check, add it to Justfile — CI picks it up automatically.
+      - name: Run all checks
+        run: just check
