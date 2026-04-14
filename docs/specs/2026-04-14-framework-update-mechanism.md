@@ -1,7 +1,7 @@
 # Framework Update Mechanism for ckeletin-rust
 
 **Date:** 2026-04-14
-**Status:** Design approved
+**Status:** Design approved, revised after manifesto review
 **Scope:** Restructure ckeletin-rust to support framework updates, project initialization, and migration of existing projects
 
 ## Problem
@@ -10,15 +10,26 @@ Projects built from ckeletin-rust receive no upstream improvements. When the sca
 
 The manual `sed` rename during project creation also breaks `.stderr` violation test files. There is no init flow and no update flow.
 
+## Alternatives Considered
+
+**Git subtree:** Rejected. Subtree merges don't support directory-scoped replacement — conflicts in `.ckeletin/` would leak into manual merge resolution, breaking the wholesale-replace guarantee.
+
+**Cargo patch/workspace inheritance:** Rejected. Workspace inheritance (`dep.workspace = true`) only handles dependency versions, not code delivery. `[patch]` overrides specific crate versions but doesn't provide a mechanism for delivering non-code files (Justfile, scripts, deny.toml).
+
+**Published crate on crates.io:** Deferred, not rejected. The right eventual destination, but premature now — the API isn't stable. Publishing adds ceremony (releases, backwards compatibility) before we know what the stable API is. The vendored model lets us iterate; crates.io locks us in. See "Future: Publishing to crates.io" section.
+
 ## Design Principles Applied
 
 - **Truth-Seeking (1):** Framework vs project code has an explicit, enforceable boundary
+- **Curiosity Over Certainty (2):** Alternatives explored and documented above. The vendored model is a hypothesis — if it proves wrong, crates.io publishing is the fallback
+- **Good Will (3):** The update mechanism is a trust anchor. Every project trusts that `.ckeletin/` delivers safe code because: (a) it comes from a known git remote, (b) `cargo check` verifies every update before commit, (c) rollback is automatic on failure. The framework earns trust through verification, not authority
 - **Lean Iteration (4):** Vendored path dependency now; crates.io publishing when API stabilizes
 - **Platforms, Not Features (5):** The update mechanism is a platform — every future framework improvement flows through it
+- **Partnership (6):** See "Contributing Back to Framework" section
 - **Single Source of Truth (7):** Framework code lives in one place (`.ckeletin/`), not duplicated across projects
 - **Separation of Concerns (8):** Framework concerns (output, config, logging) separated from project concerns (business logic, commands)
-- **Automated Enforcement (9):** Cargo workspace structure enforces architecture boundaries at compile time
-- **Feedback Cycle (10):** Projects discover improvements, contribute back to framework, framework distributes to all projects via update
+- **Automated Enforcement (9):** Cargo workspace structure enforces architecture boundaries at compile time. `just ckeletin-health` detects local modifications to framework-owned files
+- **Feedback Cycle (10):** Projects discover improvements, contribute back via PR, framework distributes to all projects via update. `just ckeletin-check-update` detects when the framework has new versions available
 
 ## Key Insight: Rust Doesn't Need Import Rewriting
 
@@ -26,7 +37,7 @@ Go's ckeletin-go requires AST-based import rewriting on every init and update be
 
 Rust separates naming from location. A crate's name is declared in `Cargo.toml` and resolved by Cargo. `use ckeletin::output::Output` works in every project regardless of the project name. The framework crate is always called `ckeletin`. No renaming. No AST tools.
 
-This makes init trivial (set binary name, strip demos) and update trivial (replace `.ckeletin/` directory).
+**Clarification on scope of "no rewriting":** This applies to the framework crate (`ckeletin`) and to ongoing updates. The one-time restructuring of the scaffold itself DOES rename the project crates from `ckeletin-domain` → `domain` etc. And migrating existing projects (workhorse) requires a one-time import rewrite. But these are one-time costs during restructure/migration, not recurring costs on every update — which is the key difference from Go's approach.
 
 ## Directory Layout
 
@@ -48,6 +59,9 @@ project-root/
 │   │   └── src/main.rs
 │   ├── tests/                          # Violation test templates
 │   │   └── violations/
+│   ├── migrations/                     # Version-keyed migration scripts
+│   │   ├── 0.2.0.sh
+│   │   └── ...
 │   ├── Justfile                        # Framework recipes (ckeletin-* prefix)
 │   └── scripts/
 │       ├── init.sh                     # Project initialization
@@ -69,7 +83,7 @@ project-root/
 │       ├── src/
 │       └── tests/
 │
-├── Cargo.toml                          # workspace members: crates/*, .ckeletin/crate, .ckeletin/conform
+├── Cargo.toml                          # workspace members: ["crates/*", ".ckeletin/crate", ".ckeletin/conform"]
 ├── Justfile                            # Project recipes, imports .ckeletin/Justfile
 ├── conformance-mapping.toml            # Project-owned
 ├── deny.toml                           # Project-owned (framework provides default on init)
@@ -78,6 +92,8 @@ project-root/
 ├── CHANGELOG.md
 └── lefthook.yml
 ```
+
+**`.ckeletin/` MUST be committed to git** — the update and rollback flows depend on `git checkout HEAD -- .ckeletin/` to restore from the last committed state. Do not add `.ckeletin/` to `.gitignore`.
 
 ## Ownership Rules
 
@@ -88,6 +104,16 @@ project-root/
 | Root config | Project | Templates created | Never touched | Untouched |
 | `Cargo.toml` (workspace) | Project | Members set | Never touched | Members updated |
 | `conformance-mapping.toml` | Project | Reset to deferred | Never touched | Untouched |
+
+## Protecting the Framework Boundary
+
+Nothing prevents a developer from editing files inside `.ckeletin/`. The next update silently destroys their changes. To make this visible:
+
+- `just ckeletin-health` checks `git diff --name-only .ckeletin/` and warns if files are locally modified
+- `just ckeletin-update` refuses to run if `.ckeletin/` has uncommitted local changes — forces the developer to either commit (accepting they'll be overwritten) or revert
+- `just check` includes `ckeletin-health` so CI pipelines catch local modifications
+
+If a project needs to patch framework code: fork ckeletin-rust, make the change in `.ckeletin/`, PR it upstream. After it merges, `just ckeletin-update` delivers it. Local patching is explicitly not supported — it would be silently destroyed.
 
 ## Crate Naming
 
@@ -100,6 +126,8 @@ Framework crates carry the `ckeletin` prefix. Project crates are clean:
 | `crates/domain` | `domain` | Business logic — no I/O, no framework deps |
 | `crates/infrastructure` | `infrastructure` | Re-exports ckeletin + project-specific I/O |
 | `crates/cli` | `cli` | Commands, arg parsing. `[[bin]] name` = project name |
+
+**Current state requires restructuring:** The scaffold currently has `ckeletin-domain`, `ckeletin-infrastructure`, `ckeletin-cli`. The first implementation step renames these to `domain`, `infrastructure`, `cli` and extracts framework code into `.ckeletin/crate/`. This is a one-time restructuring of the scaffold itself.
 
 Project code never writes `use ckeletin::` directly. Infrastructure re-exports framework modules:
 
@@ -120,14 +148,18 @@ use domain::ping;
 use infrastructure::output::Output;
 ```
 
+The `ckeletin` crate uses workspace dependencies where applicable. Framework and project share dependency versions via `[workspace.dependencies]` in the root `Cargo.toml`.
+
 ## Dependency Graph
 
 ```
-domain          → serde                        (pure business logic)
-infrastructure  → ckeletin, serde, figment...  (framework + project I/O)
-cli             → domain, infrastructure, clap (convergence)
-ckeletin        → serde, serde_json, figment, tracing, thiserror (framework deps)
-ckeletin-conform → serde, serde_json, toml, ureq (standalone tool)
+domain           → serde                            (pure business logic)
+infrastructure   → ckeletin, serde, figment...      (framework + project I/O)
+cli              → domain, infrastructure, clap     (convergence)
+ckeletin         → serde, serde_json, figment,      (framework deps, from workspace)
+                   tracing, tracing-subscriber,
+                   tracing-appender, thiserror
+ckeletin-conform → serde, serde_json, toml, ureq    (standalone tool)
 ```
 
 Compile-time enforcement: domain has no dependency on infrastructure or ckeletin. Any reverse import is a compile error. Violation tests (trybuild) verify this.
@@ -136,33 +168,45 @@ Compile-time enforcement: domain has no dependency on infrastructure or ckeletin
 
 `just init name=myproject` — run once after cloning.
 
-1. Set `[[bin]] name` in `crates/cli/Cargo.toml` to `myproject`
-2. Update workspace `Cargo.toml` metadata (repository, description)
-3. Update root `Justfile` `binary_name` variable
-4. Strip demo code: `crates/domain/src/ping.rs`, `crates/cli/src/ping.rs`, ping references in tests
-5. Copy violation test templates from `.ckeletin/tests/violations/` to `crates/domain/tests/` and `crates/infrastructure/tests/`
-6. Reset `CHANGELOG.md` to empty Keep a Changelog template
-7. Reset `conformance-mapping.toml` — framework checks `met`, project-specific `deferred`
-8. Reset git history: `git init`, initial commit, `v0.0.0` tag
-9. Verify: `cargo check --workspace`
+1. **Pre-flight:** check no uncommitted changes exist (warn and abort if found — prevents losing work when git history is reset in step 8)
+2. Set `[[bin]] name` in `crates/cli/Cargo.toml` to `myproject`
+3. Update workspace `Cargo.toml` metadata (repository, description)
+4. Update root `Justfile` `binary_name` variable
+5. Strip demo code:
+   - Remove `crates/domain/src/ping.rs` and its `pub mod ping;` in `lib.rs`
+   - Remove `crates/cli/src/ping.rs` and its `mod ping;` in `main.rs`
+   - Remove `Commands::Ping` variant from `crates/cli/src/root.rs`
+   - Remove `root::Commands::Ping => ping::execute(&output)?` match arm from `main.rs`
+   - Remove ping-related integration tests from `crates/cli/tests/cli.rs`
+6. Copy violation test templates from `.ckeletin/tests/violations/` to `crates/domain/tests/` and `crates/infrastructure/tests/` (templates use `domain` and `infrastructure` as crate names — already correct since project crates have clean names)
+7. Reset `CHANGELOG.md` to empty Keep a Changelog template
+8. Reset `conformance-mapping.toml` — framework checks `met`, project-specific `deferred`
+9. Reset git history: `git init`, initial commit referencing framework version from `.ckeletin/VERSION`, `v0.0.0` tag
+10. Verify: `cargo check --workspace`
 
-No crate renaming. No import rewriting. Five string replacements in known files.
+No crate renaming needed — the scaffold already uses clean names (`domain`, `infrastructure`, `cli`) after the initial restructuring.
 
 ## Update Flow
 
-`just ckeletin-update` — run when framework has improvements.
+`just ckeletin-update version="main"` — run when framework has improvements.
 
-1. Add `ckeletin-upstream` remote (first time): `git remote add ckeletin-upstream https://github.com/peiman/ckeletin-rust.git`
-2. Fetch: `git fetch ckeletin-upstream` (or pinned: `version=v0.2.0`)
-3. Replace: `git checkout ckeletin-upstream/main -- .ckeletin/`
-4. Post-update migrations: run `.ckeletin/scripts/migrate.sh` if breaking changes exist between old and new VERSION
-5. Verify: `cargo check --workspace` — if fails, rollback `.ckeletin/` and report error
-6. Show changes: diff `.ckeletin/CHANGELOG.md` between old and new version
-7. Commit: `git add .ckeletin/ && git commit -m "chore: update ckeletin framework to vX.Y.Z"`
+1. **Pre-flight:** verify no uncommitted changes in `.ckeletin/`: `git diff --quiet .ckeletin/ || abort "uncommitted changes in .ckeletin/ — commit or revert first"`
+2. **Save old version:** `OLD_VERSION=$(cat .ckeletin/VERSION)`
+3. **Add upstream remote** (first time): `git remote add ckeletin-upstream https://github.com/peiman/ckeletin-rust.git`
+4. **Fetch:** `git fetch ckeletin-upstream`
+5. **Replace:** `git checkout ckeletin-upstream/$version -- .ckeletin/` (where `$version` is the argument — a branch name or tag like `v0.2.0`)
+6. **New version:** `NEW_VERSION=$(cat .ckeletin/VERSION)`
+7. **Post-update migrations:** if `OLD_VERSION != NEW_VERSION`, run all migration scripts in `.ckeletin/migrations/` for versions between OLD and NEW in order (e.g., updating from 0.1.0 to 0.3.0 runs `0.2.0.sh` then `0.3.0.sh`). Each migration script is idempotent.
+8. **Update lockfile:** `cargo generate-lockfile` to resolve any dependency changes
+9. **Verify:** `cargo check --workspace` — if this fails, rollback: `git checkout HEAD -- .ckeletin/` (restores from last committed state), print the error, abort
+10. **Show changes:** diff `.ckeletin/CHANGELOG.md` using `git diff HEAD -- .ckeletin/CHANGELOG.md`
+11. **Commit:** `git add .ckeletin/ Cargo.lock && git commit -m "chore: update ckeletin framework from $OLD_VERSION to $NEW_VERSION"`
 
-Dry run available: `just ckeletin-update-dry-run` — shows what would change without applying.
+**Dry run:** `just ckeletin-update-dry-run version="main"` — fetches, shows what files would change (`git diff HEAD -- .ckeletin/` after checkout), then rolls back without committing.
 
-No import rewriting. The crate name `ckeletin` is stable across all versions. `use ckeletin::output::Output` resolves to the new code automatically.
+**Check for updates:** `just ckeletin-check-update` — fetches upstream, compares `.ckeletin/VERSION` against `ckeletin-upstream/main:.ckeletin/VERSION`, reports whether the project is behind.
+
+No import rewriting. The crate name `ckeletin` is stable across all versions.
 
 ## Migration Flow (Existing Projects)
 
@@ -170,30 +214,45 @@ No import rewriting. The crate name `ckeletin` is stable across all versions. `u
 
 Example: workhorse has `workhorse-domain`, `workhorse-infrastructure`, `workhorse-cli`.
 
-1. Create `.ckeletin/` from upstream (same as update step 1-3)
-2. Rename crates in all `Cargo.toml` files:
-   - `workhorse-domain` → `domain`
-   - `workhorse-infrastructure` → `infrastructure`
-   - `workhorse-cli` → `cli`
-3. Rewrite imports in all `.rs` files:
-   - `workhorse_domain` → `domain`
-   - `workhorse_infrastructure` → `infrastructure`
-4. Add `ckeletin` dependency to `crates/infrastructure/Cargo.toml`
-5. Add re-exports to `crates/infrastructure/src/lib.rs`:
+1. **Dry-run available:** `just ckeletin-migrate-dry-run prefix=workhorse` — shows what would change without applying
+2. **Create `.ckeletin/`** from upstream (same as update steps 3-5)
+3. **Move conform crate:** `crates/conform/` → `.ckeletin/conform/` (framework-owned after migration)
+4. **Rename crates** in all `Cargo.toml` files:
+   - `{prefix}-domain` → `domain`
+   - `{prefix}-infrastructure` → `infrastructure`
+   - `{prefix}-cli` → `cli`
+   - Update intra-workspace dependency references to match
+5. **Rewrite imports** in all `.rs` files:
+   - `{prefix}_domain` → `domain`
+   - `{prefix}_infrastructure` → `infrastructure`
+6. **Add `ckeletin` dependency** to `crates/infrastructure/Cargo.toml`: `ckeletin = { path = "../../.ckeletin/crate" }`
+7. **Add re-exports** to `crates/infrastructure/src/lib.rs`:
    - `pub use ckeletin::{config, logging, output, process};`
-6. Remove framework code from `crates/infrastructure/src/` that is now provided by ckeletin (output.rs, config.rs, logging.rs, process.rs) — keep project-specific modules
-7. Update workspace `Cargo.toml` members to include `.ckeletin/crate` and `.ckeletin/conform`
-8. Regenerate violation test `.stderr` files (crate names changed → error messages changed)
-9. Verify: `just check` (full suite)
+8. **Remove framework code** from `crates/infrastructure/src/`: delete modules whose filenames match those in `.ckeletin/crate/src/` (output.rs, config.rs, logging.rs, process.rs). Before deletion, diff each against the scaffold's original — warn if project-specific changes exist that will be lost. Keep all other modules (project-specific, e.g., session.rs).
+9. **Update workspace `Cargo.toml`** members: `["crates/*", ".ckeletin/crate", ".ckeletin/conform"]`
+10. **Regenerate violation test `.stderr` files:** run `cargo test` with `TRYBUILD=overwrite` to regenerate expected error messages with new crate names
+11. **Verify:** `just check` (full suite: fmt, clippy, tests, deny)
 
 After migration, `just ckeletin-update` works going forward. The migration is one-time.
 
+## Contributing Back to Framework
+
+The reverse of the update flow. When a project discovers a framework-level improvement:
+
+1. Fork ckeletin-rust on GitHub
+2. Make the change in `.ckeletin/` (the framework code)
+3. Open a PR against ckeletin-rust
+4. After merge, every project receives the improvement via `just ckeletin-update`
+
+**Local patches to `.ckeletin/` are not supported.** `just ckeletin-update` replaces the entire directory — local modifications are destroyed. `just ckeletin-health` warns about local modifications. This is by design: it forces improvements to flow through the upstream repo where they benefit all projects.
+
 ## Justfile Structure
 
-**`.ckeletin/Justfile`** — framework recipes, all `ckeletin-` prefixed:
+**`.ckeletin/Justfile`** — framework recipes, `ckeletin-` prefixed:
 
 - `ckeletin-update` / `ckeletin-update-dry-run` — framework update
-- `ckeletin-health` — framework version and compile check
+- `ckeletin-check-update` — check if newer framework version exists
+- `ckeletin-health` — framework version, compile check, local modification detection
 - `ckeletin-check` — fmt, clippy, deny (framework-provided quality gates)
 - `conform` — run conformance generator
 
@@ -213,17 +272,29 @@ test:
 # ... project-specific recipes
 ```
 
-`deny.toml` stays at project root — project-owned. Framework provides a default during init. Projects evolve it as they add dependencies.
+`deny.toml` stays at project root — project-owned. Framework provides a default during init.
+
+## Version Compatibility and Migrations
+
+Framework versions follow semver. Breaking changes between versions are handled by migration scripts.
+
+**Convention:** `.ckeletin/migrations/{version}.sh` — one script per version that introduces breaking changes. Each script is idempotent (safe to run multiple times).
+
+**Version skipping:** The update script reads OLD_VERSION and NEW_VERSION, then runs all migration scripts for versions between them in semver order. Updating from 0.1.0 to 0.3.0 runs `0.2.0.sh` then `0.3.0.sh`.
+
+**No migration needed:** If a version has no breaking changes, there is no migration script for it. The update script skips versions without migration scripts.
 
 ## Testing Strategy
 
 **Framework tests:** Unit tests inside `.ckeletin/crate/` run as part of `cargo test --workspace`. These test output, config, logging, process in isolation.
 
-**Violation test templates:** `.ckeletin/tests/violations/` contains the template `.rs` files. During init, these are copied to project `crates/*/tests/violations/` with correct crate names. After copy, they are project-owned — the `.stderr` files contain project-specific error messages.
+**Violation test templates:** `.ckeletin/tests/violations/` contains the template `.rs` files. During init, these are copied to project `crates/*/tests/violations/`. Since project crates use clean names (`domain`, `infrastructure`), the `.stderr` files in the templates use these names and work without modification. After copy, they are project-owned.
 
-**Update verification:** After every update, `cargo check --workspace` runs. Failure triggers rollback of `.ckeletin/` to the previous version.
+**Update verification:** After every update, `cargo check --workspace` runs. Failure triggers rollback via `git checkout HEAD -- .ckeletin/` and an error message showing what broke.
 
-**Migration verification:** After migration, `just check` (full suite: fmt, clippy, tests, deny) runs.
+**Migration verification:** After migration, `just check` (full suite: fmt, clippy, tests, deny) runs. A dry-run mode is available to preview changes before applying.
+
+**Framework health in CI:** `just check` includes `ckeletin-health`, which detects local modifications to `.ckeletin/`. CI pipelines that run `just check` automatically catch framework tampering.
 
 ## Future: Publishing to crates.io
 
@@ -236,6 +307,10 @@ to:
 ckeletin = "1.0"
 ```
 
-One line change. Updates via `cargo update`. The `.ckeletin/` directory would then only contain non-code files (Justfile, scripts, conform, violation templates). The library code moves to crates.io with semver protection.
+One line change. Updates via `cargo update` with semver protection. The `.ckeletin/` directory would then only contain non-code files (Justfile, scripts, conform, violation templates). The library code moves to crates.io where version bumps signal breaking changes.
 
 This is a future step. The vendored model works now and gives us iteration speed.
+
+## Platform Notes
+
+Init, update, and migration scripts are shell scripts (bash). Cross-platform support (Windows) is a non-goal for the initial implementation. The ckeletin-go scaffold has the same constraint. If Windows support becomes necessary, the scripts can be rewritten in Rust as a `ckeletin` CLI tool.
