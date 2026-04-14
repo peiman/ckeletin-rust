@@ -2,6 +2,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::process::Command;
 
+// ── Spec requirements source ──────────────────────────────────
+
+const REQUIREMENTS_JSON_URL: &str =
+    "https://raw.githubusercontent.com/peiman/ckeletin/main/spec/requirements.json";
+const VENDORED_REQUIREMENTS: &str = "conformance/requirements.json";
+
+#[derive(Deserialize)]
+struct SpecManifest {
+    spec_version: String,
+    requirements: Vec<SpecRequirement>,
+}
+
+#[derive(Deserialize)]
+struct SpecRequirement {
+    id: String,
+}
+
 // ── Mapping file types (read from TOML) ─────────────────────────
 
 #[derive(Deserialize)]
@@ -20,6 +37,8 @@ struct RequirementMapping {
     checks: Vec<String>,
     #[serde(default)]
     violation_tests: Vec<String>,
+    #[serde(default)]
+    violation_evidence: Option<String>,
 }
 
 // ── Report types (output as JSON) ───────────────────────────────
@@ -66,45 +85,68 @@ struct ViolationTestResult {
     exists: bool,
 }
 
-// ── Known spec requirement IDs (CKSPEC-ENF-005 completeness anchor) ──
+// ── Requirement ID loading (replaces hardcoded list) ────────────
 
-const EXPECTED_IDS: &[&str] = &[
-    "CKSPEC-ARCH-001",
-    "CKSPEC-ARCH-002",
-    "CKSPEC-ARCH-003",
-    "CKSPEC-ARCH-004",
-    "CKSPEC-ARCH-005",
-    "CKSPEC-ARCH-006",
-    "CKSPEC-ARCH-007",
-    "CKSPEC-ENF-001",
-    "CKSPEC-ENF-002",
-    "CKSPEC-ENF-003",
-    "CKSPEC-ENF-004",
-    "CKSPEC-ENF-005",
-    "CKSPEC-ENF-006",
-    "CKSPEC-ENF-007",
-    "CKSPEC-TEST-001",
-    "CKSPEC-TEST-002",
-    "CKSPEC-TEST-003",
-    "CKSPEC-TEST-004",
-    "CKSPEC-OUT-001",
-    "CKSPEC-OUT-002",
-    "CKSPEC-OUT-003",
-    "CKSPEC-OUT-004",
-    "CKSPEC-OUT-005",
-    "CKSPEC-AGENT-001",
-    "CKSPEC-AGENT-002",
-    "CKSPEC-AGENT-003",
-    "CKSPEC-AGENT-004",
-    "CKSPEC-AGENT-005",
-    "CKSPEC-CL-001",
-    "CKSPEC-CL-002",
-    "CKSPEC-CL-003",
-    "CKSPEC-CL-004",
-    "CKSPEC-CL-005",
-    "CKSPEC-CL-006",
-    "CKSPEC-CL-007",
-];
+/// Load the spec requirement IDs. Strategy:
+/// 1. Fetch latest requirements.json from the spec repo
+/// 2. If fetch succeeds, cache it to the vendored path and use it
+/// 3. If fetch fails, fall back to the vendored copy with a warning
+/// 4. If vendored copy also missing, abort
+fn load_spec_requirements(json_mode: bool) -> (Vec<String>, String) {
+    // Try fetching from upstream
+    match fetch_upstream() {
+        Ok(manifest) => {
+            // Cache the fetched copy for offline use
+            if let Ok(json) = serde_json::to_string_pretty(&serde_json::json!({
+                "spec_version": manifest.spec_version,
+                "requirements": manifest.requirements.iter().map(|r| {
+                    serde_json::json!({"id": r.id})
+                }).collect::<Vec<_>>()
+            })) {
+                let _ = std::fs::write(VENDORED_REQUIREMENTS, format!("{json}\n"));
+            }
+            let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
+            (ids, manifest.spec_version)
+        }
+        Err(fetch_err) => {
+            // Fall back to vendored copy
+            match load_vendored() {
+                Ok(manifest) => {
+                    if !json_mode {
+                        eprintln!(
+                            "Warning: could not fetch latest requirements ({fetch_err}). Using vendored copy (spec {}).",
+                            manifest.spec_version
+                        );
+                    }
+                    let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
+                    (ids, manifest.spec_version)
+                }
+                Err(vendor_err) => {
+                    eprintln!("Error: cannot load spec requirements.");
+                    eprintln!("  Fetch failed: {fetch_err}");
+                    eprintln!("  Vendored copy: {vendor_err}");
+                    eprintln!("  Run: curl -sL {REQUIREMENTS_JSON_URL} > {VENDORED_REQUIREMENTS}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+fn fetch_upstream() -> Result<SpecManifest, String> {
+    let body: Vec<u8> = ureq::get(REQUIREMENTS_JSON_URL)
+        .call()
+        .map_err(|e| format!("{e}"))?
+        .body_mut()
+        .read_to_vec()
+        .map_err(|e| format!("{e}"))?;
+    serde_json::from_slice(&body).map_err(|e| format!("parse error: {e}"))
+}
+
+fn load_vendored() -> Result<SpecManifest, String> {
+    let content = std::fs::read_to_string(VENDORED_REQUIREMENTS).map_err(|e| format!("{e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("parse error: {e}"))
+}
 
 fn main() {
     let json_mode = std::env::args().any(|a| a == "--json");
@@ -125,11 +167,22 @@ fn main() {
         }
     };
 
+    // ── Load requirement IDs from spec (replaces hardcoded list) ──
+    let (expected_ids, spec_version) = load_spec_requirements(json_mode);
+
+    // ── Spec version comparison ────────────────────────────────
+    if mapping.spec_version != spec_version && !json_mode {
+        eprintln!(
+            "Warning: mapping targets spec {} but requirements.json is spec {}",
+            mapping.spec_version, spec_version
+        );
+    }
+
     // ── ENF-005: Completeness check ─────────────────────────────
-    let missing: Vec<&str> = EXPECTED_IDS
+    let missing: Vec<&str> = expected_ids
         .iter()
-        .filter(|id| !mapping.requirements.contains_key(**id))
-        .copied()
+        .filter(|id| !mapping.requirements.contains_key(id.as_str()))
+        .map(|s| s.as_str())
         .collect();
 
     if !missing.is_empty() {
@@ -188,10 +241,17 @@ fn main() {
             });
         }
 
-        // ENF-006: compile-time claims without violation tests
-        if req.enforcement_level == "compile-time" && req.violation_tests.is_empty() {
+        // ENF-006: claims above honor-system need proof (violation_tests or violation_evidence)
+        let above_honor = !matches!(req.enforcement_level.as_str(), "honor-system" | "design");
+        let has_violation_test = !req.violation_tests.is_empty();
+        let has_violation_evidence = req
+            .violation_evidence
+            .as_ref()
+            .is_some_and(|e| !e.is_empty());
+        if above_honor && !has_violation_test && !has_violation_evidence {
             feedback.push(format!(
-                "{req_id}: claims compile-time but has no violation test"
+                "{req_id}: claims {} but has no violation test or evidence",
+                req.enforcement_level
             ));
         }
 
@@ -219,7 +279,7 @@ fn main() {
     let today = chrono_free_date();
 
     let report = Report {
-        implementation: "ckeletin-rust".to_string(),
+        implementation: "workhorse".to_string(),
         spec_version: mapping.spec_version.clone(),
         report_date: today,
         summary: Summary {

@@ -3,3 +3,6 @@
 *.swo
 *~
 .DS_Store
+
+# Vendored spec requirements (fetched at runtime, cached locally)
+conformance/requirements.json

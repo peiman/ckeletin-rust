@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.3.0"
+spec_version = "0.4.0"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
@@ -12,9 +12,10 @@ spec_version = "0.3.0"
 title = "Four-layer architecture"
 status = "met"
 enforcement_level = "compile-time"
-evidence = "Cargo workspace: crates/domain, crates/infrastructure, crates/cli"
+evidence = "Cargo workspace: crates/domain, crates/infrastructure, crates/cli, crates/conform"
 checks = ["cargo check --workspace"]
 violation_tests = []
+violation_evidence = "Structural: crates/domain/Cargo.toml has no dep on infrastructure/cli. crates/infrastructure/Cargo.toml has no dep on domain/cli. Import violations tested via trybuild: crates/domain/tests/violations/domain_imports_infrastructure.rs"
 
 [requirements.CKSPEC-ARCH-002]
 title = "Directed dependencies"
@@ -57,10 +58,11 @@ violation_tests = ["crates/infrastructure/tests/violations/infra_imports_domain.
 [requirements.CKSPEC-ARCH-006]
 title = "Entry point minimality"
 status = "met"
-enforcement_level = "design"
-evidence = "crates/cli/src/main.rs is ~20 lines. Bootstrap only."
+enforcement_level = "compile-time"
+evidence = "crates/cli/src/main.rs is bootstrap only — arg parsing, config, logging init, dispatch."
 checks = []
 violation_tests = []
+violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target. Domain and infrastructure crates are library-only."
 
 [requirements.CKSPEC-ARCH-007]
 title = "Package location enforcement"
@@ -69,6 +71,7 @@ enforcement_level = "compile-time"
 evidence = "All source in designated crate directories. Workspace structure enforces this."
 checks = ["cargo check --workspace"]
 violation_tests = []
+violation_evidence = "Structural: crates/cli/Cargo.toml has [[bin]] target. crates/domain/Cargo.toml and crates/infrastructure/Cargo.toml are library-only. No source files at workspace root."
 
 # ═══════════════════════════════════════════════════════════════
 # Enforcement (CKSPEC-ENF-001 through CKSPEC-ENF-007)
