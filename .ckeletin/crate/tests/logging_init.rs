@@ -6,7 +6,7 @@
 //!
 //! This file tests the file-logging path — the code at 59% coverage.
 
-use ckeletin_infrastructure::logging::{init, LogConfig};
+use ckeletin::logging::{init, LogConfig};
 use std::fs;
 
 #[test]

@@ -4,12 +4,12 @@
 mod ping;
 mod root;
 
-use ckeletin_infrastructure::{
+use clap::Parser;
+use infrastructure::{
     config::Config,
     logging::{self, LogConfig},
     output::{Output, OutputMode},
 };
-use clap::Parser;
 
 fn main() {
     std::process::exit(run());

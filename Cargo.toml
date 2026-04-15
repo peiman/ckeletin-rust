@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", ".ckeletin/crate", ".ckeletin/conform"]
 resolver = "2"
 
 [workspace.package]

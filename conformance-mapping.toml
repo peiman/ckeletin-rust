@@ -178,7 +178,7 @@ title = "Three-stream output separation"
 status = "met"
 enforcement_level = "script"
 evidence = "output.rs: stdout (data), stderr (tracing status), log file (tracing audit)."
-checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
 
 [requirements.CKSPEC-OUT-002]
@@ -186,7 +186,7 @@ title = "Machine-readable output mode"
 status = "met"
 enforcement_level = "script"
 evidence = "--json flag. Integration tests verify JSON envelope on stdout."
-checks = ["cargo test -p ckeletin-cli --test cli"]
+checks = ["cargo test -p cli --test cli"]
 violation_tests = []
 
 [requirements.CKSPEC-OUT-003]
@@ -194,7 +194,7 @@ title = "Standardized output envelope"
 status = "met"
 enforcement_level = "script"
 evidence = "Envelope struct: status, command, data, error. Unit tests verify serialization."
-checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
 
 [requirements.CKSPEC-OUT-004]
@@ -202,7 +202,7 @@ title = "Shadow logging"
 status = "met"
 enforcement_level = "script"
 evidence = "tracing::debug! in Output::success() and Output::error(). Lands in file layer."
-checks = ["cargo test -p ckeletin-infrastructure --lib output"]
+checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
 
 [requirements.CKSPEC-OUT-005]
@@ -254,7 +254,7 @@ title = "CLI as the agent interface"
 status = "met"
 enforcement_level = "script"
 evidence = "--json flag provides machine-readable output. No protocol layer required."
-checks = ["cargo test -p ckeletin-cli --test cli"]
+checks = ["cargo test -p cli --test cli"]
 violation_tests = []
 
 # ═══════════════════════════════════════════════════════════════

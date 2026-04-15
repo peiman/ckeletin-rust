@@ -155,42 +155,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "ckeletin-cli"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "ckeletin-domain",
- "ckeletin-infrastructure",
- "clap",
- "owo-colors",
- "predicates",
-]
-
-[[package]]
-name = "ckeletin-conform"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "toml 0.8.23",
- "ureq",
-]
-
-[[package]]
-name = "ckeletin-domain"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "trybuild",
-]
-
-[[package]]
-name = "ckeletin-infrastructure"
-version = "0.1.0"
+name = "ckeletin"
+version = "0.2.0"
 dependencies = [
  "figment",
- "rstest",
  "serde",
  "serde_json",
  "tempfile",
@@ -198,7 +166,16 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "trybuild",
+]
+
+[[package]]
+name = "ckeletin-conform"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+ "ureq",
 ]
 
 [[package]]
@@ -240,6 +217,18 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "cli"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "domain",
+ "infrastructure",
+ "owo-colors",
+ "predicates",
+]
 
 [[package]]
 name = "colorchoice"
@@ -285,6 +274,15 @@ name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
+
+[[package]]
+name = "domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "trybuild",
+]
 
 [[package]]
 name = "equivalent"
@@ -478,6 +476,16 @@ dependencies = [
  "hashbrown 0.17.0",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "infrastructure"
+version = "0.1.0"
+dependencies = [
+ "ckeletin",
+ "rstest",
+ "tempfile",
+ "trybuild",
 ]
 
 [[package]]

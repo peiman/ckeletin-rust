@@ -1,7 +1,12 @@
-# ckeletin-rust task runner
+# Project task runner
+# Framework tasks imported from .ckeletin/Justfile
+
+import '.ckeletin/Justfile'
+
+binary_name := "ckeletin-rust"
 
 # Single gateway — all checks (CKSPEC-ENF-001)
-check: fmt-check clippy test deny
+check: ckeletin-check test ckeletin-health
     @echo "All checks passed."
 
 # Run tests
@@ -12,26 +17,10 @@ test:
 coverage:
     cargo llvm-cov --workspace --fail-under-lines 85
 
-# Check formatting
-fmt-check:
-    cargo fmt --all -- --check
-
-# Format code
-fmt:
-    cargo fmt --all
-
-# Run clippy (strict)
-clippy:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-# Run cargo-deny checks (licenses, advisories)
-deny:
-    cargo deny check
-
 # Build release binary
 build:
     cargo build --release
 
-# Run conformance check (CKSPEC-ENF-005/006/007)
-conform *ARGS:
-    cargo run -p ckeletin-conform -q -- {{ARGS}}
+# Initialize scaffold for a new project (run once after clone)
+init name:
+    .ckeletin/scripts/init.sh {{name}}

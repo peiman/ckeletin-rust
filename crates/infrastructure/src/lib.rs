@@ -1,4 +1,5 @@
-pub mod config;
-pub mod logging;
-pub mod output;
-pub mod process;
+// Re-export framework modules — project code imports from infrastructure, not ckeletin
+pub use ckeletin::config;
+pub use ckeletin::logging;
+pub use ckeletin::output;
+pub use ckeletin::process;
