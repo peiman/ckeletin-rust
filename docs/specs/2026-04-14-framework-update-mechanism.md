@@ -148,7 +148,7 @@ use domain::ping;
 use infrastructure::output::Output;
 ```
 
-The `ckeletin` crate uses workspace dependencies where applicable. Framework and project share dependency versions via `[workspace.dependencies]` in the root `Cargo.toml`.
+The `ckeletin` crate pins its own dependency versions instead of using `[workspace.dependencies]`. This is intentional — `.ckeletin/` is replaced wholesale on update and must be self-contained. The project's workspace dependencies are for project crates only.
 
 ## Dependency Graph
 
@@ -156,7 +156,7 @@ The `ckeletin` crate uses workspace dependencies where applicable. Framework and
 domain           → serde                            (pure business logic)
 infrastructure   → ckeletin, serde, figment...      (framework + project I/O)
 cli              → domain, infrastructure, clap     (convergence)
-ckeletin         → serde, serde_json, figment,      (framework deps, from workspace)
+ckeletin         → serde, serde_json, figment,      (framework deps, self-contained)
                    tracing, tracing-subscriber,
                    tracing-appender, thiserror
 ckeletin-conform → serde, serde_json, toml, ureq    (standalone tool)

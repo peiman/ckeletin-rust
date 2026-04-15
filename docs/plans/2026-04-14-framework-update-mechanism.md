@@ -28,10 +28,12 @@ Extract the framework library from `crates/infrastructure/` into `.ckeletin/crat
 - Create: `.ckeletin/crate/src/logging.rs`
 - Create: `.ckeletin/crate/src/process.rs`
 
-- [ ] **Step 1: Create VERSION file**
+- [ ] **Step 1: Create directory structure and VERSION file**
 
 ```bash
 mkdir -p .ckeletin/crate/src
+mkdir -p .ckeletin/migrations
+mkdir -p .ckeletin/scripts
 echo "0.2.0" > .ckeletin/VERSION
 ```
 
@@ -179,6 +181,8 @@ domain = { path = "../domain" }
 infrastructure = { path = "../infrastructure" }
 ```
 
+Keep `owo-colors = { workspace = true }` — it's a project dependency for terminal styling.
+
 - [ ] **Step 5: Move conform crate to `.ckeletin/`**
 
 ```bash
@@ -217,12 +221,15 @@ git commit -m "refactor: rename project crates to clean names, move conform to .
 
 ### Task 3: Rewrite imports throughout the codebase
 
-Update all `use ckeletin_domain` → `use domain` and `use ckeletin_infrastructure` → `use infrastructure` in `.rs` files. Update infrastructure `lib.rs` to re-export from ckeletin.
+Update all `use ckeletin_domain` → `use domain` and `use ckeletin_infrastructure` → `use infrastructure` in `.rs` files. Update infrastructure `lib.rs` to re-export from ckeletin. Also update test files that reference old crate names.
+
+Note: this is a restructuring task, not feature work. TDD does not apply — we are moving code, not writing new behavior. The verification step (`cargo check`) serves as the correctness gate.
 
 **Files:**
 - Modify: `crates/cli/src/main.rs`
 - Modify: `crates/cli/src/ping.rs`
 - Modify: `crates/infrastructure/src/lib.rs`
+- Modify: `crates/infrastructure/tests/logging_init.rs`
 
 - [ ] **Step 1: Update `crates/cli/src/main.rs`**
 
@@ -245,18 +252,19 @@ use infrastructure::{
 
 - [ ] **Step 2: Update `crates/cli/src/ping.rs`**
 
-Replace the entire file:
+The current file uses `use ckeletin_domain as domain;` to alias the prefixed name. Since the crate is now named `domain`, the alias is unnecessary. Replace the import lines only:
+
+```rust
+use ckeletin_domain as domain;
+use ckeletin_infrastructure::output::Output;
+```
+becomes:
 ```rust
 use domain::ping;
 use infrastructure::output::Output;
-use std::io;
-
-/// Execute the ping command through the output pipeline.
-pub fn execute(output: &Output) -> io::Result<()> {
-    let result = ping::execute();
-    output.success("ping", &result, &mut io::stdout())
-}
 ```
+
+And update the function body from `domain::ping::execute()` to `ping::execute()` (since we now import the module directly).
 
 - [ ] **Step 3: Update `crates/infrastructure/src/lib.rs`**
 
@@ -276,16 +284,25 @@ pub use ckeletin::output;
 pub use ckeletin::process;
 ```
 
-- [ ] **Step 4: Verify compilation**
+- [ ] **Step 4: Update `crates/infrastructure/tests/logging_init.rs`**
+
+This test file uses `use ckeletin_infrastructure::logging`. Replace with:
+```rust
+use infrastructure::logging;
+```
+
+Without this fix, `cargo check --workspace` will fail because the test references the old crate name.
+
+- [ ] **Step 5: Verify compilation**
 
 Run: `cargo check --workspace`
 
 Expected: success. All imports resolve through the new names.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add crates/cli/src/main.rs crates/cli/src/ping.rs crates/infrastructure/src/lib.rs
+git add crates/cli/src/ crates/infrastructure/src/lib.rs crates/infrastructure/tests/logging_init.rs
 git commit -m "refactor: rewrite imports to clean crate names"
 ```
 
@@ -351,11 +368,27 @@ Run: `cargo test -p infrastructure -- architecture_violations`
 
 Expected: all 6 tests pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Create violation test templates in `.ckeletin/tests/violations/`**
+
+These templates are the source of truth for init. They use the clean crate names (`domain`, `infrastructure`) so they work without modification when init copies them to a new project.
 
 ```bash
-git add crates/domain/tests/ crates/infrastructure/tests/
-git commit -m "test: update violation tests for clean crate names"
+mkdir -p .ckeletin/tests/violations
+cp crates/domain/tests/violations/domain_imports_clap.rs .ckeletin/tests/violations/
+cp crates/domain/tests/violations/domain_imports_figment.rs .ckeletin/tests/violations/
+cp crates/domain/tests/violations/domain_imports_infrastructure.rs .ckeletin/tests/violations/
+cp crates/domain/tests/violations/domain_imports_tracing.rs .ckeletin/tests/violations/
+cp crates/infrastructure/tests/violations/infra_imports_clap.rs .ckeletin/tests/violations/
+cp crates/infrastructure/tests/violations/infra_imports_domain.rs .ckeletin/tests/violations/
+```
+
+Note: `.stderr` files are NOT copied to the templates. They are project-specific (contain absolute paths) and must be regenerated per project during init.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add crates/domain/tests/ crates/infrastructure/tests/ .ckeletin/tests/
+git commit -m "test: update violation tests for clean crate names, add templates"
 ```
 
 ---
@@ -596,6 +629,16 @@ if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
     exit 1
 fi
 
+# Pre-flight: warn about uncommitted changes
+if [ -d .git ] && ! git diff --quiet 2>/dev/null; then
+    echo "Warning: uncommitted changes exist. Init resets git history — uncommitted work will be lost."
+    read -p "Continue? (y/N) " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
+
 echo "Initializing scaffold as: $NAME"
 
 # 1. Set binary name
@@ -612,7 +655,23 @@ sed -i '' "s/binary_name := \"ckeletin-rust\"/binary_name := \"$NAME\"/" Justfil
 sed -i '' "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
 sed -i '' "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
 
-# 5. Reset CHANGELOG.md
+# 5. Strip demo code
+# Remove ping domain module
+rm -f crates/domain/src/ping.rs
+sed -i '' '/pub mod ping;/d' crates/domain/src/lib.rs
+
+# Remove ping CLI command
+rm -f crates/cli/src/ping.rs
+sed -i '' '/mod ping;/d' crates/cli/src/main.rs
+# Remove Ping variant from Commands enum and its match arm
+sed -i '' '/Ping,/d' crates/cli/src/root.rs
+sed -i '' '/Check connectivity/d' crates/cli/src/root.rs
+sed -i '' '/Commands::Ping/d' crates/cli/src/main.rs
+
+# Remove ping-related integration tests (lines containing "ping")
+sed -i '' '/ping/Id' crates/cli/tests/cli.rs
+
+# 6. Reset CHANGELOG.md
 cat > CHANGELOG.md << 'CHANGELOG'
 # Changelog
 
@@ -623,9 +682,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 CHANGELOG
-
-# 6. Reset conformance-mapping.toml status to deferred for project-specific items
-# (Framework architecture checks stay met since the structure is inherited)
 
 # 7. Verify
 echo "Verifying..."
