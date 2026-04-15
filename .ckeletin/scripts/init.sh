@@ -21,32 +21,45 @@ fi
 
 echo "Initializing scaffold as: $NAME"
 
+# Portable sed -i (macOS uses BSD sed, Linux uses GNU sed)
+sedi() {
+    if sed --version 2>/dev/null | grep -q GNU; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
+
 # 1. Set binary name
-sed -i '' "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/Cargo.toml
-sed -i '' "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/src/root.rs
+sedi "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/Cargo.toml
+sedi "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/src/root.rs
 
 # 2. Update workspace metadata
-sed -i '' "s|peiman/ckeletin-rust|peiman/$NAME|g" Cargo.toml
+sedi "s|peiman/ckeletin-rust|peiman/$NAME|g" Cargo.toml
 
 # 3. Update Justfile binary name
-sed -i '' "s/binary_name := \"ckeletin-rust\"/binary_name := \"$NAME\"/" Justfile
+sedi "s/binary_name := \"ckeletin-rust\"/binary_name := \"$NAME\"/" Justfile
 
-# 4. Update ping message to use new name
-sed -i '' "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
-sed -i '' "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
+# 4. Update env prefix in main.rs (CKELETIN_ → PROJECT_NAME_)
+UPPER_NAME=$(echo "$NAME" | tr '[:lower:]-' '[:upper:]_')
+sedi "s/\"CKELETIN_\"/\"${UPPER_NAME}_\"/" crates/cli/src/main.rs
 
-# 5. Strip demo code
+# 5. Update ping message to use new name
+sedi "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
+sedi "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
+
+# 6. Strip demo code
 rm -f crates/domain/src/ping.rs
-sed -i '' '/pub mod ping;/d' crates/domain/src/lib.rs
+sedi '/pub mod ping;/d' crates/domain/src/lib.rs
 
 rm -f crates/cli/src/ping.rs
-sed -i '' '/mod ping;/d' crates/cli/src/main.rs
-sed -i '' '/Ping,/d' crates/cli/src/root.rs
-sed -i '' '/Check connectivity/d' crates/cli/src/root.rs
-sed -i '' '/Commands::Ping/d' crates/cli/src/main.rs
+sedi '/mod ping;/d' crates/cli/src/main.rs
+sedi '/Ping,/d' crates/cli/src/root.rs
+sedi '/Check connectivity/d' crates/cli/src/root.rs
+sedi '/Commands::Ping/d' crates/cli/src/main.rs
 
 # Remove ping-related integration tests
-sed -i '' '/ping/Id' crates/cli/tests/cli.rs
+sedi '/ping/Id' crates/cli/tests/cli.rs
 
 # 6. Reset CHANGELOG.md
 cat > CHANGELOG.md << 'CHANGELOG'

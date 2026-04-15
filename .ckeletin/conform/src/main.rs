@@ -279,7 +279,7 @@ fn main() {
     let today = chrono_free_date();
 
     let report = Report {
-        implementation: "workhorse".to_string(),
+        implementation: detect_implementation_name(),
         spec_version: mapping.spec_version.clone(),
         report_date: today,
         summary: Summary {
@@ -355,6 +355,27 @@ fn run_check(cmd: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Detect project name from the [[bin]] name in crates/cli/Cargo.toml.
+fn detect_implementation_name() -> String {
+    let content = match std::fs::read_to_string("crates/cli/Cargo.toml") {
+        Ok(c) => c,
+        Err(_) => return "unknown".to_string(),
+    };
+    let parsed: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return "unknown".to_string(),
+    };
+    // Read from [[bin]] array, first entry's name
+    parsed
+        .get("bin")
+        .and_then(|b| b.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|entry| entry.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 /// Simple date without chrono dependency.

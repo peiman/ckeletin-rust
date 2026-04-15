@@ -44,7 +44,7 @@ fn run() -> i32 {
 
 fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration (defaults → file → env)
-    let config = Config::load(cli.config.as_deref())?;
+    let config = Config::load(cli.config.as_deref(), "CKELETIN_")?;
 
     // Determine output mode: CLI flag overrides config.
     // --output json on CLI takes precedence. Config json=true is fallback.

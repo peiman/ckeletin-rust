@@ -30,3 +30,9 @@ fn domain_cannot_import_infrastructure() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/violations/domain_imports_infrastructure.rs");
 }
+
+#[test]
+fn domain_cannot_import_ckeletin() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/violations/domain_imports_ckeletin.rs");
+}
