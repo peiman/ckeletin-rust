@@ -26,7 +26,7 @@ impl Default for LogConfig {
         Self {
             console_level: "info".to_string(),
             file_enabled: false,
-            file_path: "logs/ckeletin-rust.log".to_string(),
+            file_path: "logs/app.log".to_string(),
             file_level: "debug".to_string(),
         }
     }
@@ -105,7 +105,7 @@ mod tests {
         let config = LogConfig::default();
         assert_eq!(config.console_level, "info");
         assert!(!config.file_enabled);
-        assert_eq!(config.file_path, "logs/ckeletin-rust.log");
+        assert_eq!(config.file_path, "logs/app.log");
         assert_eq!(config.file_level, "debug");
     }
 

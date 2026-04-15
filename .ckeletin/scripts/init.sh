@@ -30,9 +30,9 @@ sedi() {
     fi
 }
 
-# 1. Set binary name
+# 1. Set binary name and replace all ckeletin-rust references in CLI crate
 sedi "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/Cargo.toml
-sedi "s/name = \"ckeletin-rust\"/name = \"$NAME\"/" crates/cli/src/root.rs
+sedi "s/ckeletin-rust/$NAME/g" crates/cli/src/root.rs
 
 # 2. Update workspace metadata
 sedi "s|peiman/ckeletin-rust|peiman/$NAME|g" Cargo.toml

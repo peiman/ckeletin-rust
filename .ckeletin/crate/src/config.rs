@@ -168,8 +168,52 @@ mod tests {
     fn different_prefix_ignores_other_env_vars() {
         std::env::set_var("WRONGPREFIX_LOG_LEVEL", "error");
         let config = Config::load(None, "RIGHTPREFIX_").unwrap();
-        // Should use default, not the WRONGPREFIX_ value
         assert_eq!(config.log_level, "info");
         std::env::remove_var("WRONGPREFIX_LOG_LEVEL");
+    }
+
+    /// Every config field must be settable via env var.
+    /// This catches the .split("_") bug that silently broke env overrides.
+    #[test]
+    fn every_config_field_settable_via_env() {
+        let prefix = "CKEVERY_";
+        std::env::set_var("CKEVERY_LOG_LEVEL", "error");
+        std::env::set_var("CKEVERY_LOG_FILE_ENABLED", "true");
+        std::env::set_var("CKEVERY_LOG_FILE_PATH", "/tmp/test.log");
+        std::env::set_var("CKEVERY_LOG_FILE_LEVEL", "trace");
+        std::env::set_var("CKEVERY_JSON", "true");
+
+        let config = Config::load(None, prefix).unwrap();
+        assert_eq!(config.log_level, "error", "LOG_LEVEL env not applied");
+        assert!(config.log_file_enabled, "LOG_FILE_ENABLED env not applied");
+        assert_eq!(
+            config.log_file_path, "/tmp/test.log",
+            "LOG_FILE_PATH env not applied"
+        );
+        assert_eq!(
+            config.log_file_level, "trace",
+            "LOG_FILE_LEVEL env not applied"
+        );
+        assert!(config.json, "JSON env not applied");
+
+        std::env::remove_var("CKEVERY_LOG_LEVEL");
+        std::env::remove_var("CKEVERY_LOG_FILE_ENABLED");
+        std::env::remove_var("CKEVERY_LOG_FILE_PATH");
+        std::env::remove_var("CKEVERY_LOG_FILE_LEVEL");
+        std::env::remove_var("CKEVERY_JSON");
+    }
+
+    /// Env vars override TOML file values (precedence: default < file < env).
+    #[test]
+    fn env_overrides_toml_file() {
+        let prefix = "CKPREC_";
+        let mut file = NamedTempFile::with_suffix(".toml").unwrap();
+        writeln!(file, "log_level = \"debug\"").unwrap();
+        std::env::set_var("CKPREC_LOG_LEVEL", "error");
+
+        let config = Config::load(Some(file.path().to_str().unwrap()), prefix).unwrap();
+        assert_eq!(config.log_level, "error", "env should override TOML");
+
+        std::env::remove_var("CKPREC_LOG_LEVEL");
     }
 }
