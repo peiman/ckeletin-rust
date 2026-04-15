@@ -59,14 +59,11 @@ impl Config {
     /// Load configuration with layered precedence:
     /// defaults → config file (if exists) → environment variables.
     ///
-    /// Missing config file is not an error — defaults apply.
-    /// figment's provenance tracking gives clear error messages
-    /// on misconfiguration (stronger than Viper's interface{}).
-    /// Load configuration with layered precedence.
-    ///
     /// `env_prefix` controls which environment variables are read.
     /// Projects pass their own name: `"WORKHORSE_"`, `"MYAPP_"`.
     /// The scaffold default is `"CKELETIN_"`.
+    ///
+    /// Missing config file is not an error — defaults apply.
     pub fn load(
         config_path: Option<&str>,
         env_prefix: &str,
