@@ -70,6 +70,13 @@ crates/
 2. **CLI handler** (`crates/cli/src/mycommand.rs`):
    - Calls domain function, passes result to `Output::success()`
    - Takes `&Output` as parameter for format selection
+   - For a "no-data-to-report" success path (e.g. "no recorded
+     history yet", "no pending actions"), call `Output::message()`
+     not `Output::success()` with a `&format!("...")` String. The
+     helper produces a stable JSON shape (`data: {"message":
+     "..."}`) that downstream consumers can rely on; passing a
+     bare String to `success` wraps it as a raw string blob in the
+     envelope's `data` slot. See `output.rs` for the contract.
 
 3. **Wire into root** (`crates/cli/src/root.rs`):
    - Add variant to `Commands` enum
@@ -101,6 +108,9 @@ crates/
 
 - **Domain has zero framework deps.** If you need logging in domain, return data and let the CLI layer log it.
 - **All output through `Output` struct.** Never `println!` or `eprintln!` in domain or infrastructure. The output system handles stream routing and shadow logging.
+- **Domain types handed to `Output::success` must implement both `Serialize` and `Display`.** `Output::success<T: Serialize + Display>` renders via `Display` in human mode and serializes via `Serialize` in JSON mode. One value, two outputs — presentation lives on the type. Implementing only `Serialize` means the type doesn't compile into a `success()` call; implementing only `Display` means JSON mode silently renders a string blob. See `crates/cli/src/ping.rs` (minimal) and `workhorse/crates/domain/src/replay.rs` (richer, with nested sections) for worked examples.
+- **No-data success paths use `Output::message()`, not `Output::success()` with a `&format!("...")` string.** The `message` helper (added in ckeletin 0.2.2) writes a human sentence in text mode and an envelope with `data: {"message": msg}` in JSON mode — a stable, structured shape instead of a raw string blob.
+- **Error envelopes must identify the failing subcommand.** Capture the command name from `&cli.command` *before* moving `cli` into `run_inner`, thread it into `Output::error`. Use an exhaustive `match` (not a default arm) so new subcommands are a compile error until they declare their own name — no silent `"init"` fallback. See `crates/cli/src/main.rs::subcommand_name`.
 - **Typed configuration.** Add fields to `Config` struct in `config.rs`. figment deserializes at startup — no runtime type assertions.
 - **Error handling:** `thiserror` for typed errors, `Box<dyn Error>` at application boundary.
 - **Conventional commits:** `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `ci:`, `chore:`. Enforced by lefthook commit-msg hook.
@@ -112,6 +122,70 @@ crates/
 - **Integration tests:** `assert_cmd` in `crates/cli/tests/cli.rs`
 - **Coverage:** `just coverage` (85% minimum, CKSPEC-TEST-002)
 - **No mock frameworks.** Use writer injection (pass `&mut dyn Write`) or simple test doubles.
+
+## Patterns for data-driven plug points
+
+When a CKSPEC-compliant CLI grows to support **multiple backends,
+runtimes, or providers**, the common pattern is a set of `const`s —
+one per plugin — all matching the same struct shape (binary name,
+signal strings, templates, keywords). This is a powerful pattern
+but it has two specific failure modes that earn their own discipline.
+
+### Capture-before-declare
+
+Constants representing external systems (e.g. TUI ready signals,
+CLI flag names, API response markers) MUST be picked from captured
+evidence of the real system — never from docs, memory, or a
+related implementation. External reality drifts; pinned constants
+picked from intuition drift silently. The symptom is the pipeline
+mis-classifying state weeks after the constant landed, with green
+tests the whole time because the tests were written against the
+same incorrect values.
+
+**Discipline:** for every new plug-point constant:
+
+1. Launch the real external system under your wrapper.
+2. Capture its output/state in every distinct mode
+   (pre-ready, ready, post-invocation, completion, failure).
+3. Pick constant values from strings that appear *only* in the
+   state they identify. Avoid substrings of text that appears in
+   adjacent states.
+4. Pin the captures as literals in regression tests that assert
+   the picked constants appear in the right state and not the
+   wrong ones. When the external system changes, these tests fail
+   loudly — not silently at runtime.
+5. Commit cites the capture source (file path or transcript).
+
+Worked reference implementation:
+[workhorse's adapter-authoring protocol](https://github.com/peiman/workhorse/blob/main/workhorse-vault/references/adapter-authoring-protocol.md)
+— the history section documents three separate incidents that
+earned this discipline before it was written down.
+
+### Cross-plug-point alias tests
+
+When two plug-point constants share a shape, it's easy for one to
+accidentally pick a signal that's a substring of another's.
+Example: if plugin A declares `ready_signal = "Ready"` and plugin
+B declares `completion_signal = "Not ready for input"`, A's signal
+false-matches B's pane content.
+
+**Discipline:** add a zero-cost invariant test that, for every
+pair of plug-points (A, B) where A ≠ B, asserts no signal in A is
+a substring of any signal in B. The test iterates the plug-point
+registry, so adding a new plug-point automatically gets guarded
+without per-plugin test code.
+
+Worked reference:
+[workhorse's `adapter_signals_do_not_alias_across_adapters`](https://github.com/peiman/workhorse/blob/main/crates/domain/src/runtime.rs)
+in `crates/domain/src/runtime.rs`.
+
+### When these patterns apply (and when they don't)
+
+These patterns apply when the CLI has multiple pluggable backends
+represented as data (constants or config). They don't apply when
+the CLI has a single runtime, a single protocol, or pure
+business logic. Add them when the second plug-point lands — not
+speculatively in a single-plugin CLI.
 
 ## Troubleshooting
 
