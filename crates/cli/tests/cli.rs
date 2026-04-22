@@ -100,6 +100,27 @@ fn json_mode_bad_config_produces_json_error_on_stdout() {
 }
 
 #[test]
+fn json_mode_error_envelope_identifies_failing_subcommand() {
+    // CKSPEC-OUT-003: the envelope's `command` field MUST identify
+    // the failing subcommand so downstream consumers can correlate
+    // envelopes to commands. A hardcoded placeholder (e.g. "init")
+    // violates the spirit of this requirement even though the envelope
+    // is structurally valid.
+    cmd()
+        .args([
+            "--output",
+            "json",
+            "--config",
+            "/nonexistent/config.toml",
+            "ping",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("\"status\": \"error\""))
+        .stdout(predicate::str::contains("\"command\": \"ping\""));
+}
+
+#[test]
 fn json_mode_error_has_no_stderr() {
     // JSON mode: stderr must be clean even on errors
     cmd()
