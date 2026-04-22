@@ -87,6 +87,37 @@ impl Output {
         }
     }
 
+    /// Render a human-addressed success message with no structured
+    /// data. Intended for "nothing to report" success paths — e.g.
+    /// "no recorded history yet", "no pending actions". Both modes
+    /// stay useful: humans get a sentence, machines get an envelope
+    /// with a predictable `data: {"message": "..."}` shape rather
+    /// than a raw string blob in the `data` field.
+    ///
+    /// Human mode: writes `msg` + newline to the writer.
+    /// JSON mode: envelope with `data = {"message": msg}`.
+    /// Both modes: shadow log to audit stream (CKSPEC-OUT-004).
+    ///
+    /// Consumers that DO have structured data should call
+    /// `success(..)` instead — this method is specifically for the
+    /// "no-data-to-serialize" case.
+    pub fn message(&self, command: &str, msg: &str, out: &mut dyn Write) -> io::Result<()> {
+        tracing::debug!(command = command, "output.message");
+        match self.mode {
+            OutputMode::Human => writeln!(out, "{msg}"),
+            OutputMode::Json => {
+                let envelope = Envelope {
+                    status: Status::Success,
+                    command: command.to_string(),
+                    data: Some(serde_json::json!({ "message": msg })),
+                    error: None,
+                };
+                serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
+                writeln!(out)
+            }
+        }
+    }
+
     /// Render error output.
     ///
     /// Human mode: message to stderr writer.
@@ -198,6 +229,60 @@ mod tests {
             value: s.to_string(),
         }
     }
+
+    // --- Output::message tests ---
+
+    #[test]
+    fn human_message_writes_msg_with_newline() {
+        let output = Output::new(OutputMode::Human);
+        let mut buf = Vec::new();
+        output
+            .message("learn", "no recorded history yet", &mut buf)
+            .unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "no recorded history yet\n");
+    }
+
+    #[test]
+    fn json_message_wraps_text_in_structured_data_field() {
+        // The whole reason Output::message exists: JSON mode should
+        // produce `data: {"message": "..."}` — structured — not a
+        // raw string blob in the data slot.
+        let output = Output::new(OutputMode::Json);
+        let mut buf = Vec::new();
+        output
+            .message("learn", "no recorded history yet", &mut buf)
+            .unwrap();
+        let envelope: Envelope = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(envelope.status, Status::Success);
+        assert_eq!(envelope.command, "learn");
+        let data = envelope.data.expect("data must be present");
+        assert!(data.is_object(), "data must be an object, got: {data}");
+        assert_eq!(data["message"], "no recorded history yet");
+    }
+
+    #[test]
+    fn json_message_output_is_valid_parseable_json() {
+        let output = Output::new(OutputMode::Json);
+        let mut buf = Vec::new();
+        output.message("cmd", "hi", &mut buf).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn json_message_envelope_carries_the_subcommand_name() {
+        // Regression guard against the same class of bug as
+        // `json_mode_error_envelope_identifies_failing_subcommand`
+        // in the upstream cli tests — the envelope's `command` field
+        // must match what the caller passed.
+        let output = Output::new(OutputMode::Json);
+        let mut buf = Vec::new();
+        output.message("replay", "nothing", &mut buf).unwrap();
+        let envelope: Envelope = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(envelope.command, "replay");
+    }
+
+    // --- Output::success tests ---
 
     #[test]
     fn human_success_writes_display_to_writer() {
