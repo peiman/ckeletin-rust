@@ -20,25 +20,42 @@ fn run() -> i32 {
     // before we can route errors correctly.
     let cli = root::Cli::parse();
     let json_mode = matches!(cli.output, root::OutputFormat::Json);
+    // Capture the subcommand name BEFORE moving `cli` into `run_inner`,
+    // so the error envelope can identify which subcommand failed
+    // (CKSPEC-OUT-003). Earned 2026-04-22 — prior versions hardcoded
+    // "init", producing `{"command":"init"}` for every failing
+    // subcommand regardless of which one was running.
+    let cmd_name = subcommand_name(&cli.command);
 
     match run_inner(cli) {
         Ok(()) => 0,
         Err(e) => {
             // CKSPEC-OUT-002: errors in JSON mode MUST be JSON envelopes on stdout.
             // Errors in human mode go to stderr.
+            // CKSPEC-OUT-003: the envelope MUST identify the failing subcommand.
             let output = Output::new(if json_mode {
                 OutputMode::Json
             } else {
                 OutputMode::Human
             });
             let _ = output.error(
-                "init",
+                cmd_name,
                 &e.to_string(),
                 &mut std::io::stdout(),
                 &mut std::io::stderr(),
             );
             1
         }
+    }
+}
+
+/// Map a parsed `Commands` variant to its CLI-visible name. A plain
+/// `match` so adding a new subcommand is a compile error here until a
+/// name is assigned — no silent "init" fallback. Consumers of ckeletin
+/// extend this alongside their own `root::Commands` additions.
+fn subcommand_name(command: &root::Commands) -> &'static str {
+    match command {
+        root::Commands::Ping => "ping",
     }
 }
 

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Error envelope in JSON mode now identifies the failing subcommand
+  via its `command` field (CKSPEC-OUT-003). Prior versions hardcoded
+  `"command": "init"` in the error path of `crates/cli/src/main.rs`,
+  so every subcommand that failed produced an envelope claiming the
+  init command, regardless of which one was running. A
+  `subcommand_name(&Commands)` helper now maps the parsed `Commands`
+  variant to its CLI-visible name, captured before `cli` moves into
+  `run_inner`. The match in `subcommand_name` is exhaustive — adding
+  a new subcommand is a compile error until the name is assigned,
+  eliminating the silent-fallback class of bug entirely. Regression
+  test: `json_mode_error_envelope_identifies_failing_subcommand` in
+  `crates/cli/tests/cli.rs`.
+
 ## [0.1.0] - 2026-04-13
 
 ### Added
