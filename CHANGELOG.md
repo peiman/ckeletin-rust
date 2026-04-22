@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Output::message(command, msg, writer)` — framework helper for
+  no-structured-data success paths (e.g. "no recorded history
+  yet"). Human mode writes the sentence + newline; JSON mode wraps
+  in `data: {"message": msg}` so downstream JSON consumers always
+  find a structured object in the `data` slot (never a raw string
+  blob). Framework version bumped to 0.2.2. Discovered during the
+  workhorse replay build when `learn::execute` and `replay::execute`
+  both ended up passing `&format!("...")` to `Output::success` for
+  their empty-history paths, producing JSON envelopes with the
+  message as a string-in-data slot. Regression tests in
+  `.ckeletin/crate/src/output.rs`:
+  `human_message_writes_msg_with_newline`,
+  `json_message_wraps_text_in_structured_data_field`,
+  `json_message_output_is_valid_parseable_json`,
+  `json_message_envelope_carries_the_subcommand_name`.
+
 ### Fixed
 - Error envelope in JSON mode now identifies the failing subcommand
   via its `command` field (CKSPEC-OUT-003). Prior versions hardcoded
