@@ -1,4 +1,4 @@
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `ckeletin`
+error[E0433]: cannot find module or crate `ckeletin` in this scope
  --> tests/violations/domain_imports_ckeletin.rs:6:5
   |
 6 | use ckeletin::config::Config;

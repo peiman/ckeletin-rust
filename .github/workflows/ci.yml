@@ -16,7 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: clippy, rustfmt, llvm-tools-preview
 
@@ -54,7 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
+      - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -83,7 +85,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: llvm-tools-preview
 
@@ -115,7 +118,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
+      - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
         uses: actions/cache@v4

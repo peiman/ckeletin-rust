@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remaining above-honor-system claims now carry `violation_evidence`
   pointing at the CI-gated test/check/tool that catches a regression
   (tooling-enforced, the case CKSPEC-ENF-006 allows evidence for).
+- Pinned the Rust toolchain to 1.96.0 via `rust-toolchain.toml` (and the
+  CI jobs) so the trybuild architecture-violation snapshots stay
+  deterministic across machines, CI, and scaffolded projects. rustc 1.96.0
+  reworded the E0433 error, which had silently broken CI's floating
+  `@stable`; the three affected `.stderr` snapshots were refreshed.
 
 ### Fixed
 - Error envelope in JSON mode now identifies the failing subcommand
