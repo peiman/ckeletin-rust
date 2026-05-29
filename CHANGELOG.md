@@ -37,6 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   eliminating the silent-fallback class of bug entirely. Regression
   test: `json_mode_error_envelope_identifies_failing_subcommand` in
   `crates/cli/tests/cli.rs`.
+- `just init <name>` now produces a project that compiles and is a
+  committed git repository. The init script previously stripped the
+  `ping` demo command — the only subcommand — leaving an empty
+  `Commands` enum that `crates/cli/src/main.rs` could not match
+  exhaustively (`error[E0004]`), so `cargo check` failed at init's
+  verify step and the script exited before `git init`. It also used a
+  case-insensitive line delete (`sed '/ping/Id'`) that mangled
+  `crates/cli/tests/cli.rs` into invalid Rust. init now keeps `ping`
+  as the renamed worked example (matching the ckeletin-go scaffold),
+  verifies with `cargo check --all-targets` so a broken test file can
+  no longer slip through, and the previously `#[ignore]`d `init_smoke`
+  test is gated in CI (upstream-only). Fixes #1.
+
+### Security
+- Bumped `rustls-webpki` 0.103.12 → 0.103.13 (RUSTSEC-2026-0104:
+  reachable panic parsing certificate revocation lists), pulled in
+  transitively via `.ckeletin/conform` → `ureq` → `rustls`. The
+  committed `Cargo.lock` previously failed `cargo deny check` (and
+  therefore `just check`) on a clean clone.
 
 ## [0.1.0] - 2026-04-13
 
