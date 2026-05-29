@@ -84,6 +84,7 @@ enforcement_level = "ci"
 evidence = "lefthook pre-commit (fmt, clippy), cargo-deny, CI via just check"
 checks = []
 violation_tests = []
+violation_evidence = "lefthook.yml pre-commit hooks (fmt, clippy, conventional commits) and .github/workflows/ci.yml gating `just check` are tooling that wraps the codebase from outside; a violating commit is rejected pre-commit or fails CI."
 
 [requirements.CKSPEC-ENF-002]
 title = "Enforcement ladder"
@@ -116,6 +117,7 @@ enforcement_level = "script"
 evidence = "The conformance generator (.ckeletin/conform/src/main.rs, run by `just conform`) loads the spec requirement IDs (live, with vendored conformance/requirements.json fallback) and exits non-zero on any unmapped requirement before reporting."
 checks = []
 violation_tests = []
+violation_evidence = "Unit test find_unmapped_flags_a_requirement_missing_from_the_mapping in .ckeletin/conform/src/main.rs proves the completeness check detects an unmapped requirement; conform then exits non-zero (CI conform job)."
 
 [requirements.CKSPEC-ENF-006]
 title = "Violation tests for enforcement claims"
@@ -124,6 +126,7 @@ enforcement_level = "script"
 evidence = "7 trybuild violation tests back the compile-time claims. `just conform` verifies each declared violation_test file exists and emits an ENF-007 feedback signal for any above-honor-system claim lacking a violation test or violation_evidence."
 checks = ["cargo test --workspace"]
 violation_tests = []
+violation_evidence = "Unit tests lacks_proof_* in .ckeletin/conform/src/main.rs prove the proof-detection logic flags above-honor-system claims lacking a violation test or evidence."
 
 [requirements.CKSPEC-ENF-007]
 title = "Automatic feedback signals"
@@ -132,6 +135,7 @@ enforcement_level = "script"
 evidence = "`just conform` (.ckeletin/conform/src/main.rs) emits feedback signals for missing violation tests and above-honor-system claims lacking proof; surfaced in the report summary (feedback_signals)."
 checks = []
 violation_tests = []
+violation_evidence = "The feedback vector and ENF-007 summary in .ckeletin/conform/src/main.rs produce the signals; the CI conform job surfaces them on every run."
 
 # ═══════════════════════════════════════════════════════════════
 # Testing (CKSPEC-TEST-001 through CKSPEC-TEST-004)
@@ -152,6 +156,7 @@ enforcement_level = "ci"
 evidence = "`just coverage` enforces 85% line coverage via cargo-llvm-cov, gated by the CI coverage job (.github/workflows/ci.yml). The build-time conformance generator (.ckeletin/conform) is an excluded, documented denominator; the rest of the workspace is ~99.8%."
 checks = []
 violation_tests = []
+violation_evidence = "`--fail-under-lines 85` in the `just coverage` recipe is a documented cargo-llvm-cov gate that exits non-zero below threshold (tooling-enforced); run by the CI coverage job, so a drop below 85% fails the build."
 
 [requirements.CKSPEC-TEST-003]
 title = "Dependency injection over mocking"
@@ -180,14 +185,16 @@ enforcement_level = "script"
 evidence = "output.rs: stdout (data), stderr (tracing status), log file (tracing audit)."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
+violation_evidence = ".ckeletin/crate/src/output.rs unit tests assert stream routing (human→writer, json→envelope on stdout, error→stderr); a routing regression fails them in CI (`just check`)."
 
 [requirements.CKSPEC-OUT-002]
 title = "Machine-readable output mode"
 status = "met"
 enforcement_level = "script"
-evidence = "--json flag. Integration tests verify JSON envelope on stdout."
+evidence = "--output json flag. Integration tests verify the JSON envelope on stdout with clean stderr."
 checks = ["cargo test -p cli --test cli"]
 violation_tests = []
+violation_evidence = "crates/cli/tests/cli.rs ping_json_mode_* and json_mode_error_* tests assert the JSON envelope on stdout and empty stderr; a regression fails them in CI (`just check`)."
 
 [requirements.CKSPEC-OUT-003]
 title = "Standardized output envelope"
@@ -196,6 +203,7 @@ enforcement_level = "script"
 evidence = "Envelope struct: status, command, data, error. Unit tests verify serialization."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
+violation_evidence = ".ckeletin/crate/src/output.rs envelope_* unit tests assert the {status, command, data, error} envelope shape and serialization; a regression fails them in CI (`just check`)."
 
 [requirements.CKSPEC-OUT-004]
 title = "Shadow logging"
@@ -225,6 +233,7 @@ enforcement_level = "script"
 evidence = "AGENTS.md exists with required sections."
 checks = ["test -f AGENTS.md"]
 violation_tests = []
+violation_evidence = "The `test -f AGENTS.md` check is run by `just conform` (CI conform job); a missing AGENTS.md fails the check and conform exits non-zero."
 
 [requirements.CKSPEC-AGENT-002]
 title = "No provider-specific content in universal guide"
@@ -241,6 +250,7 @@ enforcement_level = "script"
 evidence = "CLAUDE.md exists, references AGENTS.md."
 checks = ["test -f CLAUDE.md"]
 violation_tests = []
+violation_evidence = "The `test -f CLAUDE.md` check is run by `just conform` (CI conform job); a missing CLAUDE.md fails the check and conform exits non-zero."
 
 [requirements.CKSPEC-AGENT-004]
 title = "Agent guide completeness"
@@ -254,9 +264,10 @@ violation_tests = []
 title = "CLI as the agent interface"
 status = "met"
 enforcement_level = "script"
-evidence = "--json flag provides machine-readable output. No protocol layer required."
+evidence = "--output json flag provides machine-readable output. No protocol layer required."
 checks = ["cargo test -p cli --test cli"]
 violation_tests = []
+violation_evidence = "crates/cli/tests/cli.rs JSON-mode tests exercise the --output json agent interface end to end; a regression fails them in CI (`just check`)."
 
 # ═══════════════════════════════════════════════════════════════
 # Changelog (CKSPEC-CL-001 through CKSPEC-CL-007)
@@ -269,6 +280,7 @@ enforcement_level = "script"
 evidence = "CHANGELOG.md exists at root."
 checks = ["test -f CHANGELOG.md"]
 violation_tests = []
+violation_evidence = "The `test -f CHANGELOG.md` check is run by `just conform` (CI conform job); a missing CHANGELOG.md fails the check and conform exits non-zero."
 
 [requirements.CKSPEC-CL-002]
 title = "Keep a Changelog format"

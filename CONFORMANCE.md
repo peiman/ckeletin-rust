@@ -58,7 +58,7 @@ continues to refine the spec.
 
 **Generator (supersedes the prior "deferred"):** `just conform` runs the `ckeletin-conform` crate (`.ckeletin/conform/`). It loads the spec requirement set (live from the spec repo, with a committed `conformance/requirements.json` fallback so it works offline), fails on unmapped requirements (ENF-005), runs each mapped check, verifies declared violation-test files exist (ENF-006), and emits feedback signals (ENF-007). It is gated by the CI `conform` job.
 
-**Documented gap (ENF-003):** 13 requirements declare an above-honor-system enforcement level backed by positive checks (e.g. `test -f AGENTS.md`, integration tests) rather than dedicated *violation* tests. `just conform` surfaces these as ENF-007 feedback signals. Adding violation tests — or honestly reclassifying to honor-system — is tracked future work; per ENF-006's guidance we prefer real violation tests over box-ticking `violation_evidence`.
+**ENF-006 proof (closed):** every above-honor-system claim now carries proof, so `just conform` reports **0 feedback signals**. The two keystone enforcements — the generator's completeness check (ENF-005) and its proof-detection logic (ENF-006) — have unit *violation* tests in `.ckeletin/conform/src/main.rs` (`find_unmapped_flags_a_requirement_missing_from_the_mapping`, `lacks_proof_*`). The remaining claims carry `violation_evidence` pointing at the specific CI-gated artifact that catches a regression: the `output.rs` unit tests (OUT-001/003), the `cli.rs` JSON tests (OUT-002, AGENT-005), the `test -f` file checks run by `just conform` (AGENT-001/003, CL-001), the lefthook + CI gate (ENF-001), and the `--fail-under-lines 85` coverage gate (TEST-002). These are tooling-enforced (CI-run), the case CKSPEC-ENF-006 explicitly allows `violation_evidence` for — each entry names the real mechanism, not a path pasted to mute a warning.
 
 ---
 
@@ -134,7 +134,7 @@ continues to refine the spec.
 | License + advisory scanning | cargo-deny | pre-commit + CI | Full | — | No violation test |
 | Coverage threshold | cargo-llvm-cov 85% | CI | Full | — | conform generator excluded (documented) |
 | Conformance completeness | `just conform` fail-on-unmapped | CI (script) | Full | — | — |
-| Conformance violation proof | `just conform` checks test files | CI (script) | Full | — | 13 claims rely on checks, surfaced as feedback |
+| Conformance violation proof | `just conform` checks test files | CI (script) | Full | `find_unmapped_*`, `lacks_proof_*` in conform | All claims now carry tests or CI-gated evidence (0 feedback signals) |
 | Shadow logging | tracing events (data) + default-on audit | script | Full | output.rs + cli.rs audit tests | — |
 | TDD / atomic commits / changelog curation | AGENTS.md + CLAUDE.md | honor system | — | N/A | Cannot automate intent |
 | Conventional commits | lefthook commit-msg | pre-commit | Full | — | No violation test |

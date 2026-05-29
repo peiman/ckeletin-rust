@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`conformance/requirements.json`) is now committed so `just conform`
   works offline. Net: 35 requirements — all 35 met (previously reported
   32 met / 3 deferred against a stale v0.3.0 snapshot).
+- Closed all ENF-007 conformance feedback signals — `just conform` now
+  reports 0. The generator's completeness check (ENF-005) and
+  proof-detection logic (ENF-006) gained unit *violation* tests in
+  `.ckeletin/conform/src/main.rs` (the generator's first tests); the
+  remaining above-honor-system claims now carry `violation_evidence`
+  pointing at the CI-gated test/check/tool that catches a regression
+  (tooling-enforced, the case CKSPEC-ENF-006 allows evidence for).
 
 ### Fixed
 - Error envelope in JSON mode now identifies the failing subcommand
