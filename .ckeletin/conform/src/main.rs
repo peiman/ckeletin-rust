@@ -27,7 +27,7 @@ struct Mapping {
     requirements: BTreeMap<String, RequirementMapping>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct RequirementMapping {
     title: String,
     status: String,
@@ -148,6 +148,32 @@ fn load_vendored() -> Result<SpecManifest, String> {
     serde_json::from_str(&content).map_err(|e| format!("parse error: {e}"))
 }
 
+/// CKSPEC-ENF-005: requirement IDs present in the spec but absent from the
+/// mapping. A non-empty result is a completeness violation and aborts the run.
+fn find_unmapped(
+    expected_ids: &[String],
+    mapping: &BTreeMap<String, RequirementMapping>,
+) -> Vec<String> {
+    expected_ids
+        .iter()
+        .filter(|id| !mapping.contains_key(id.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// CKSPEC-ENF-006: an enforcement claim above honor-system/design MUST carry a
+/// violation test or violation_evidence. Returns true when that proof is
+/// missing (which the generator surfaces as an ENF-007 feedback signal).
+fn lacks_enforcement_proof(req: &RequirementMapping) -> bool {
+    let above_honor = !matches!(req.enforcement_level.as_str(), "honor-system" | "design");
+    let has_violation_test = !req.violation_tests.is_empty();
+    let has_violation_evidence = req
+        .violation_evidence
+        .as_ref()
+        .is_some_and(|e| !e.is_empty());
+    above_honor && !has_violation_test && !has_violation_evidence
+}
+
 fn main() {
     let json_mode = std::env::args().any(|a| a == "--json");
 
@@ -179,11 +205,7 @@ fn main() {
     }
 
     // ── ENF-005: Completeness check ─────────────────────────────
-    let missing: Vec<&str> = expected_ids
-        .iter()
-        .filter(|id| !mapping.requirements.contains_key(id.as_str()))
-        .map(|s| s.as_str())
-        .collect();
+    let missing = find_unmapped(&expected_ids, &mapping.requirements);
 
     if !missing.is_empty() {
         if json_mode {
@@ -242,13 +264,7 @@ fn main() {
         }
 
         // ENF-006: claims above honor-system need proof (violation_tests or violation_evidence)
-        let above_honor = !matches!(req.enforcement_level.as_str(), "honor-system" | "design");
-        let has_violation_test = !req.violation_tests.is_empty();
-        let has_violation_evidence = req
-            .violation_evidence
-            .as_ref()
-            .is_some_and(|e| !e.is_empty());
-        if above_honor && !has_violation_test && !has_violation_evidence {
+        if lacks_enforcement_proof(req) {
             feedback.push(format!(
                 "{req_id}: claims {} but has no violation test or evidence",
                 req.enforcement_level
@@ -385,4 +401,80 @@ fn chrono_free_date() -> String {
         .output()
         .expect("date command failed");
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mapping_with(ids: &[&str]) -> BTreeMap<String, RequirementMapping> {
+        ids.iter()
+            .map(|id| ((*id).to_string(), RequirementMapping::default()))
+            .collect()
+    }
+
+    // ── ENF-005: completeness check catches an unmapped requirement ──
+
+    #[test]
+    fn find_unmapped_flags_a_requirement_missing_from_the_mapping() {
+        let expected = vec!["CKSPEC-ARCH-001".to_string(), "CKSPEC-OUT-009".to_string()];
+        let mapping = mapping_with(&["CKSPEC-ARCH-001"]);
+        assert_eq!(
+            find_unmapped(&expected, &mapping),
+            vec!["CKSPEC-OUT-009".to_string()],
+            "an id in the spec but not the mapping must be flagged"
+        );
+    }
+
+    #[test]
+    fn find_unmapped_is_empty_when_every_requirement_is_mapped() {
+        let expected = vec!["CKSPEC-ARCH-001".to_string()];
+        let mapping = mapping_with(&["CKSPEC-ARCH-001"]);
+        assert!(find_unmapped(&expected, &mapping).is_empty());
+    }
+
+    // ── ENF-006: proof requirement catches an unproven above-honor claim ──
+
+    #[test]
+    fn lacks_proof_flags_above_honor_claim_with_neither_test_nor_evidence() {
+        let req = RequirementMapping {
+            enforcement_level: "compile-time".to_string(),
+            ..Default::default()
+        };
+        assert!(lacks_enforcement_proof(&req));
+    }
+
+    #[test]
+    fn lacks_proof_is_satisfied_by_a_violation_test() {
+        let req = RequirementMapping {
+            enforcement_level: "compile-time".to_string(),
+            violation_tests: vec!["some/violation.rs".to_string()],
+            ..Default::default()
+        };
+        assert!(!lacks_enforcement_proof(&req));
+    }
+
+    #[test]
+    fn lacks_proof_is_satisfied_by_violation_evidence() {
+        let req = RequirementMapping {
+            enforcement_level: "script".to_string(),
+            violation_evidence: Some("the cli.rs JSON tests catch a regression".to_string()),
+            ..Default::default()
+        };
+        assert!(!lacks_enforcement_proof(&req));
+    }
+
+    #[test]
+    fn lacks_proof_exempts_honor_system_and_design_levels() {
+        for level in ["honor-system", "design"] {
+            let req = RequirementMapping {
+                enforcement_level: level.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                !lacks_enforcement_proof(&req),
+                "{level} is exempt from the proof requirement"
+            );
+        }
+    }
 }
