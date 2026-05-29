@@ -1,0 +1,110 @@
+{
+  "requirements": [
+    {
+      "id": "CKSPEC-AGENT-001"
+    },
+    {
+      "id": "CKSPEC-AGENT-002"
+    },
+    {
+      "id": "CKSPEC-AGENT-003"
+    },
+    {
+      "id": "CKSPEC-AGENT-004"
+    },
+    {
+      "id": "CKSPEC-AGENT-005"
+    },
+    {
+      "id": "CKSPEC-ARCH-001"
+    },
+    {
+      "id": "CKSPEC-ARCH-002"
+    },
+    {
+      "id": "CKSPEC-ARCH-003"
+    },
+    {
+      "id": "CKSPEC-ARCH-004"
+    },
+    {
+      "id": "CKSPEC-ARCH-005"
+    },
+    {
+      "id": "CKSPEC-ARCH-006"
+    },
+    {
+      "id": "CKSPEC-ARCH-007"
+    },
+    {
+      "id": "CKSPEC-CL-001"
+    },
+    {
+      "id": "CKSPEC-CL-002"
+    },
+    {
+      "id": "CKSPEC-CL-003"
+    },
+    {
+      "id": "CKSPEC-CL-004"
+    },
+    {
+      "id": "CKSPEC-CL-005"
+    },
+    {
+      "id": "CKSPEC-CL-006"
+    },
+    {
+      "id": "CKSPEC-CL-007"
+    },
+    {
+      "id": "CKSPEC-ENF-001"
+    },
+    {
+      "id": "CKSPEC-ENF-002"
+    },
+    {
+      "id": "CKSPEC-ENF-003"
+    },
+    {
+      "id": "CKSPEC-ENF-004"
+    },
+    {
+      "id": "CKSPEC-ENF-005"
+    },
+    {
+      "id": "CKSPEC-ENF-006"
+    },
+    {
+      "id": "CKSPEC-ENF-007"
+    },
+    {
+      "id": "CKSPEC-OUT-001"
+    },
+    {
+      "id": "CKSPEC-OUT-002"
+    },
+    {
+      "id": "CKSPEC-OUT-003"
+    },
+    {
+      "id": "CKSPEC-OUT-004"
+    },
+    {
+      "id": "CKSPEC-OUT-005"
+    },
+    {
+      "id": "CKSPEC-TEST-001"
+    },
+    {
+      "id": "CKSPEC-TEST-002"
+    },
+    {
+      "id": "CKSPEC-TEST-003"
+    },
+    {
+      "id": "CKSPEC-TEST-004"
+    }
+  ],
+  "spec_version": "0.4.0"
+}

@@ -2,7 +2,7 @@
 
 ## About This Project
 
-**ckeletin-rust** is a Rust CLI scaffold implementing the [ckeletin spec](https://github.com/peiman/ckeletin) v0.3.0. It enforces four-layer architecture at compile time through a Cargo workspace with separate crates.
+**ckeletin-rust** is a Rust CLI scaffold implementing the [ckeletin spec](https://github.com/peiman/ckeletin) v0.4.0. It enforces four-layer architecture at compile time through a Cargo workspace with separate crates.
 
 Key characteristics:
 - **Workspace with 3 crates:** `domain` (business logic), `infrastructure` (config, logging, output), `cli` (entry + commands)

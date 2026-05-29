@@ -25,14 +25,14 @@ cargo run -p cli -- --output json ping
 
 ## Spec Conformance
 
-Implements [ckeletin spec](https://github.com/peiman/ckeletin) v0.3.0 — 35 requirements across 6 domains:
+Implements [ckeletin spec](https://github.com/peiman/ckeletin) v0.4.0 — 35 requirements across 6 domains (34 met, 1 partial):
 
 | Domain | Requirements | Status |
 |--------|-------------|--------|
 | Architecture | 7 | All met (compile-time enforcement) |
-| Enforcement | 7 | 4 met, 3 deferred (generators pending) |
-| Testing | 4 | All met |
-| Output | 5 | All met |
+| Enforcement | 7 | All met (`just conform` generator, CI-gated) |
+| Testing | 4 | All met (85% coverage gated in CI) |
+| Output | 5 | 4 met, 1 partial (OUT-004 shadow logging) |
 | Agent Readiness | 5 | All met |
 | Changelog | 7 | All met |
 
