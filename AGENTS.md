@@ -49,13 +49,13 @@ crates/
 | Run all checks | `just check` |
 | Run tests only | `just test` |
 | Format code | `just fmt` |
-| Check formatting | `just fmt-check` |
-| Run clippy | `just clippy` |
-| License/advisory check | `just deny` |
+| Check formatting | `just ckeletin-fmt-check` |
+| Run clippy | `just ckeletin-clippy` |
+| License/advisory check | `just ckeletin-deny` |
 | Coverage (85% min) | `just coverage` |
 | Build release binary | `just build` |
-| Run single crate tests | `cargo test -p ckeletin-domain` |
-| Run specific test | `cargo test -p ckeletin-infrastructure --lib output::tests::envelope_success` |
+| Run single crate tests | `cargo test -p domain` |
+| Run specific test | `cargo test -p ckeletin --lib output::tests::envelope_success` |
 
 **`just check` is the single gateway.** It runs fmt, clippy, test, deny — the same checks in CI and locally (SSOT). Run it before every commit.
 
@@ -195,4 +195,4 @@ speculatively in a single-plugin CLI.
 | Clippy pedantic warning | Fix it or add targeted `#[allow]` with justification |
 | Violation test fails after adding dependency | You probably added a framework dep to domain — remove it |
 | `cargo deny check` fails | Check `deny.toml` allowlist or update advisory database |
-| Integration test can't find binary | `cargo build` first, or run via `cargo test -p ckeletin-cli` |
+| Integration test can't find binary | `cargo build` first, or run via `cargo test -p cli` |
