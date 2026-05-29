@@ -155,3 +155,66 @@ fn json_verbose_no_stderr_leak() {
         .success()
         .stderr(predicate::str::is_empty());
 }
+
+// ── Audit log tests (CKSPEC-OUT-004 — audit is on by default) ──
+// These run in a temp cwd so the audit log lands there, not in the repo.
+
+#[test]
+fn audit_log_written_by_default() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd().current_dir(tmp.path()).arg("ping").assert().success();
+    assert!(
+        tmp.path().join("logs").is_dir(),
+        "audit log directory should be created by default"
+    );
+}
+
+#[test]
+fn no_audit_flag_disables_the_log_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd()
+        .current_dir(tmp.path())
+        .args(["--no-audit", "ping"])
+        .assert()
+        .success();
+    assert!(
+        !tmp.path().join("logs").exists(),
+        "--no-audit should write no audit log"
+    );
+}
+
+#[test]
+fn first_run_prints_audit_notice_to_stderr() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd()
+        .current_dir(tmp.path())
+        .arg("ping")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("audit log"));
+}
+
+#[test]
+fn audit_notice_is_silent_on_later_runs() {
+    let tmp = tempfile::tempdir().unwrap();
+    // First run creates the log dir and prints the one-time notice.
+    cmd().current_dir(tmp.path()).arg("ping").assert().success();
+    // Second run: the dir already exists, so no notice.
+    cmd()
+        .current_dir(tmp.path())
+        .arg("ping")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("audit log").not());
+}
+
+#[test]
+fn json_mode_suppresses_the_audit_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    cmd()
+        .current_dir(tmp.path())
+        .args(["--output", "json", "ping"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}

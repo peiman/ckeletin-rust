@@ -14,8 +14,9 @@ pub struct Config {
     #[serde(default = "defaults::log_level")]
     pub log_level: String,
 
-    /// Enable file logging (audit stream).
-    #[serde(default)]
+    /// Enable file logging (audit stream). On by default (CKSPEC-OUT-004:
+    /// the audit stream is always active unless explicitly disabled).
+    #[serde(default = "defaults::log_file_enabled")]
     pub log_file_enabled: bool,
 
     /// Path to the log file.
@@ -35,6 +36,9 @@ mod defaults {
     pub fn log_level() -> String {
         "info".to_string()
     }
+    pub fn log_file_enabled() -> bool {
+        true
+    }
     pub fn log_file_path() -> String {
         "logs/app.log".to_string()
     }
@@ -47,7 +51,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             log_level: defaults::log_level(),
-            log_file_enabled: false,
+            log_file_enabled: defaults::log_file_enabled(),
             log_file_path: defaults::log_file_path(),
             log_file_level: defaults::log_file_level(),
             json: false,
@@ -100,7 +104,7 @@ mod tests {
     fn default_config_values() {
         let config = Config::default();
         assert_eq!(config.log_level, "info");
-        assert!(!config.log_file_enabled);
+        assert!(config.log_file_enabled, "audit log is on by default");
         assert_eq!(config.log_file_path, "logs/app.log");
         assert_eq!(config.log_file_level, "debug");
         assert!(!config.json);
@@ -124,10 +128,12 @@ mod tests {
 
     #[test]
     fn toml_overrides_only_specified_values() {
+        // Audit logging defaults to on; a TOML value can turn it off without
+        // disturbing the other defaults.
         let mut file = NamedTempFile::with_suffix(".toml").unwrap();
-        writeln!(file, "log_file_enabled = true").unwrap();
+        writeln!(file, "log_file_enabled = false").unwrap();
         let config = Config::load(Some(file.path().to_str().unwrap()), TEST_PREFIX).unwrap();
-        assert!(config.log_file_enabled);
+        assert!(!config.log_file_enabled);
         assert_eq!(config.log_level, "info");
         assert!(!config.json);
     }

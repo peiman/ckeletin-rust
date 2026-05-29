@@ -76,7 +76,9 @@ impl Output {
         data: &T,
         out: &mut dyn Write,
     ) -> io::Result<()> {
-        tracing::debug!(command = command, "output.success");
+        // Shadow log the rendered data, not just the command name, so the
+        // audit stream contains at least what the user saw (CKSPEC-OUT-004).
+        tracing::debug!(command = command, data = %data, "output.success");
         match self.mode {
             OutputMode::Human => writeln!(out, "{data}"),
             OutputMode::Json => {
@@ -102,7 +104,8 @@ impl Output {
     /// `success(..)` instead — this method is specifically for the
     /// "no-data-to-serialize" case.
     pub fn message(&self, command: &str, msg: &str, out: &mut dyn Write) -> io::Result<()> {
-        tracing::debug!(command = command, "output.message");
+        // Shadow log the message text, not just the command name (CKSPEC-OUT-004).
+        tracing::debug!(command = command, text = msg, "output.message");
         match self.mode {
             OutputMode::Human => writeln!(out, "{msg}"),
             OutputMode::Json => {
@@ -356,5 +359,76 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
         assert!(parsed.is_object());
+    }
+
+    // --- Shadow-logging tests (CKSPEC-OUT-004) ---
+    //
+    // The audit stream must contain at least the data rendered to the user,
+    // not just the command name. These capture the tracing events Output emits
+    // and assert the rendered data / message text is present.
+
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CaptureWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureWriter {
+        type Writer = CaptureWriter;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// Run `f` with a thread-local tracing subscriber capturing DEBUG events,
+    /// returning everything that was logged.
+    fn capture_shadow_log(f: impl FnOnce()) -> String {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(CaptureWriter(buf.clone()))
+            .with_max_level(tracing::Level::DEBUG)
+            .finish();
+        tracing::subscriber::with_default(subscriber, f);
+        let bytes = buf.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn success_shadow_logs_the_rendered_data() {
+        let logged = capture_shadow_log(|| {
+            let output = Output::new(OutputMode::Human);
+            let mut sink = Vec::new();
+            output
+                .success("ping", &test_data("alive-and-well"), &mut sink)
+                .unwrap();
+        });
+        assert!(
+            logged.contains("alive-and-well"),
+            "audit log must contain the rendered data, got: {logged}"
+        );
+    }
+
+    #[test]
+    fn message_shadow_logs_the_message_text() {
+        let logged = capture_shadow_log(|| {
+            let output = Output::new(OutputMode::Json);
+            let mut sink = Vec::new();
+            output
+                .message("replay", "no recorded history yet", &mut sink)
+                .unwrap();
+        });
+        assert!(
+            logged.contains("no recorded history yet"),
+            "audit log must contain the message text, got: {logged}"
+        );
     }
 }

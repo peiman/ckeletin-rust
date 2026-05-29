@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `json_message_wraps_text_in_structured_data_field`,
   `json_message_output_is_valid_parseable_json`,
   `json_message_envelope_carries_the_subcommand_name`.
+- `--no-audit` global flag and on-by-default audit logging
+  (CKSPEC-OUT-004). The audit log (`logs/app.log`) is now written by
+  default and shadow-logs the *rendered data* (not just the command
+  name); `Output::success`/`message`/`error` all emit it. A one-time
+  first-run notice on stderr (human mode) points at the log file and the
+  off-switches: `--no-audit` for one run, or `log_file_enabled = false`
+  in config. `logs/` is gitignored.
 
 ### Changed
 - Conformance reporting brought in line with the code and ckeletin
@@ -33,15 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `just conform` generator exists and is CI-gated); CKSPEC-TEST-002
   coverage is gated by a CI job (85%, with the build-time conformance
   generator a documented exclusion; the rest of the workspace is
-  ~99.8%); CKSPEC-OUT-004 shadow logging is reported honestly as
-  "partial" (success/message log the command name but not the rendered
-  data, and the audit file is off by default); and the
-  CKSPEC-ARCH-006/007 enforcement claims were corrected (entry point is
-  102 lines not "~20"; package location is structural, not
-  compile-time). The vendored spec snapshot
+  ~99.8%); CKSPEC-OUT-004 shadow logging was completed (rendered data is
+  shadow-logged; audit logging on by default, `--no-audit` opts out) and
+  is met; and the CKSPEC-ARCH-006/007 enforcement claims were corrected
+  (entry point is 102 lines not "~20"; package location is structural,
+  not compile-time). The vendored spec snapshot
   (`conformance/requirements.json`) is now committed so `just conform`
-  works offline. Net: 35 requirements — 34 met, 1 partial (previously
-  reported 32 met / 3 deferred against a stale v0.3.0 snapshot).
+  works offline. Net: 35 requirements — all 35 met (previously reported
+  32 met / 3 deferred against a stale v0.3.0 snapshot).
 
 ### Fixed
 - Error envelope in JSON mode now identifies the failing subcommand

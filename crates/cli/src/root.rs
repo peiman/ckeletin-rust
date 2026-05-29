@@ -16,6 +16,11 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    /// Disable the audit log file for this run (CKSPEC-OUT-004 audit
+    /// logging is on by default; this overrides it for the current run)
+    #[arg(long, global = true)]
+    pub no_audit: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }

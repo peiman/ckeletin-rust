@@ -3,7 +3,7 @@
 **Implementation:** ckeletin-rust
 **Spec version:** 0.4.0
 **Report date:** 2026-05-29
-**Total:** 35 requirements — 34 met, 1 partial
+**Total:** 35 requirements — 35 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable
 source of truth) and is validated by `just conform` (`.ckeletin/conform/`),
@@ -17,8 +17,9 @@ continues to refine the spec.
 > **Changed since the 2026-04-13 report (spec v0.3.0):** the conformance
 > generator now exists, so CKSPEC-ENF-005/006/007 moved from *deferred* to
 > *met*; coverage (CKSPEC-TEST-002) is now gated in CI; agent-facing command
-> docs were corrected (CKSPEC-AGENT-004/005); CKSPEC-OUT-004 is reported
-> honestly as *partial*; and CKSPEC-ARCH-006/007 enforcement claims were
+> docs were corrected (CKSPEC-AGENT-004/005); CKSPEC-OUT-004 shadow logging
+> was completed (rendered data is logged; audit on by default, `--no-audit`
+> opts out) and is now *met*; and CKSPEC-ARCH-006/007 enforcement claims were
 > corrected to match reality.
 
 ---
@@ -74,17 +75,17 @@ continues to refine the spec.
 
 ---
 
-## Output (4/5 met, 1 partial)
+## Output (5/5 met)
 
 | ID | Title | Status | Enforcement | Evidence |
 |----|-------|--------|-------------|----------|
 | CKSPEC-OUT-001 | Three-stream output separation | met | unit tests | stdout (data), stderr (status via tracing), file (audit) |
 | CKSPEC-OUT-002 | Machine-readable output mode | met | integration tests | `--output json`; `crates/cli/tests/cli.rs` verifies the JSON envelope on stdout |
 | CKSPEC-OUT-003 | Standardized output envelope | met | unit tests | `Envelope { status, command, data, error }`; `output::tests::envelope_*` |
-| CKSPEC-OUT-004 | Shadow logging | **partial** | unit tests | See note below |
+| CKSPEC-OUT-004 | Shadow logging | met | unit + integration tests | Shadow-logs rendered data; audit on by default (`--no-audit` opts out) |
 | CKSPEC-OUT-005 | Output isolation from business logic | met | compile-time | Domain crate has no `std::io` path; `domain_imports_infrastructure.rs` |
 
-**OUT-004 (partial, honest):** the audit layer receives tracing events from every `Output` method, but two gaps remain against the MUST: (1) `success`/`message` log only the command name, not the rendered *data* the spec requires the audit log to contain (the `error` path does log its payload); (2) the file audit layer is **off by default** (`LogConfig.file_enabled = false`), so the audit stream is not "always active regardless of output mode." Closing it requires logging the rendered data on the success/message paths and an always-on audit sink — the latter is a deliberate, deferred product decision (a logfile per invocation has real UX cost).
+**OUT-004 (now met):** every `Output` method shadow-logs the rendered data — `success` logs it via `data = %data`, `message` logs the text, `error` logs the error message — so the audit log contains at least what the user saw, plus tracing metadata (timestamp, command, level). File audit logging is **on by default** (`Config.log_file_enabled` defaults to `true`), active in both human and JSON modes; users opt out with `--no-audit` (one run) or `log_file_enabled = false` (config). On first run the CLI prints a one-time stderr notice pointing at the log file and the off-switch. (This was first reported *partial* and then implemented, rather than left as a hedge.)
 
 ---
 
@@ -134,7 +135,7 @@ continues to refine the spec.
 | Coverage threshold | cargo-llvm-cov 85% | CI | Full | — | conform generator excluded (documented) |
 | Conformance completeness | `just conform` fail-on-unmapped | CI (script) | Full | — | — |
 | Conformance violation proof | `just conform` checks test files | CI (script) | Full | — | 13 claims rely on checks, surfaced as feedback |
-| Shadow logging | tracing events | script | **Partial** | — | success/message omit data; audit off by default |
+| Shadow logging | tracing events (data) + default-on audit | script | Full | output.rs + cli.rs audit tests | — |
 | TDD / atomic commits / changelog curation | AGENTS.md + CLAUDE.md | honor system | — | N/A | Cannot automate intent |
 | Conventional commits | lefthook commit-msg | pre-commit | Full | — | No violation test |
 | Scaffold init flow | `init_smoke` test | CI (upstream-only) | Full | `init_smoke` | — |
@@ -147,6 +148,6 @@ continues to refine the spec.
 
 2. **Conformance reporting rots faster than code.** This report drifted from the code (the generator existed but the prose said it didn't; the spec advanced from v0.3.0 to v0.4.0). The fix is structural: `conformance-mapping.toml` is the SSOT, `just conform` validates it, and CI gates it — so prose can no longer silently diverge.
 
-3. **Honest partials beat false "met"s.** OUT-004 shadow logging is reported `partial` rather than claimed met-with-a-hedge. Truth-Seeking (Principle 1) requires the gap be visible, not buried in a "when enabled" qualifier.
+3. **Honest partials beat false "met"s — then close them.** OUT-004 shadow logging was first reported `partial` (rather than claimed met-with-a-hedge), making the gap visible; it was then implemented properly — rendered data logged, audit on by default — and is now genuinely met. Truth-Seeking (Principle 1): surface the gap, don't bury it in a "when enabled" qualifier, then fix it.
 
 4. **A scaffold's headline flow must be gated.** `just init` shipped broken (issue #1) because its guard test was `#[ignore]`d and never run in CI. The lesson for the spec: enforcement claims include the *scaffold's own* tooling, not just the generated project.
