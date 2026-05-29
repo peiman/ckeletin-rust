@@ -13,9 +13,17 @@ check: ckeletin-check test ckeletin-health
 test:
     cargo nextest run --workspace 2>/dev/null || cargo test --workspace
 
-# Run tests with coverage (CKSPEC-TEST-002: 85% minimum)
+# Auto-format all code (the write counterpart to `just ckeletin-fmt-check`)
+fmt:
+    cargo fmt --all
+
+# Run tests with coverage (CKSPEC-TEST-002: 85% minimum).
+# Documented exclusion: the conformance generator (.ckeletin/conform) is
+# build-time tooling, not shipped runtime code, and is excluded from the
+# coverage denominator. Everything else sits at ~99%. CI runs this (see
+# the `coverage` job in .github/workflows/ci.yml) so the threshold gates merges.
 coverage:
-    cargo llvm-cov --workspace --fail-under-lines 85
+    cargo llvm-cov --workspace --ignore-filename-regex '\.ckeletin/conform/' --fail-under-lines 85
 
 # Build release binary
 build:

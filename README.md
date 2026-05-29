@@ -19,8 +19,8 @@ Directed dependencies enforced by Cargo.toml at compile time. If domain code imp
 git clone https://github.com/peiman/ckeletin-rust
 cd ckeletin-rust
 just check    # fmt + clippy + test + deny
-cargo run -p ckeletin-cli -- ping
-cargo run -p ckeletin-cli -- --json ping
+cargo run -p cli -- ping
+cargo run -p cli -- --output json ping
 ```
 
 ## Spec Conformance
