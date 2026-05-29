@@ -1,4 +1,4 @@
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `domain`
+error[E0433]: cannot find module or crate `domain` in this scope
  --> tests/violations/infra_imports_domain.rs:5:5
   |
 5 | use domain::ping::PingResult;
