@@ -1,5 +1,22 @@
 # ckeletin Framework Changelog
 
+## [0.2.3] - 2026-05-29
+
+### Fixed
+- `just init <name>` produced a non-compiling, un-committed project.
+  The strip-demo step deleted `ping` (the only subcommand), leaving an
+  empty `Commands` enum the entry point could not match exhaustively,
+  and a `sed '/ping/Id'` line delete mangled the integration-test file
+  into invalid Rust. init now keeps `ping` as the renamed worked
+  example (as the ckeletin-go scaffold does) and verifies with
+  `cargo check --all-targets`. The `init_smoke` test now builds and
+  tests the initialized project, and CI gates it (upstream-only).
+  Fixes #1.
+
+### Security
+- Bumped `rustls-webpki` to 0.103.13 (RUSTSEC-2026-0104: reachable
+  panic parsing certificate revocation lists).
+
 ## [0.2.2] - 2026-04-22
 
 ### Added

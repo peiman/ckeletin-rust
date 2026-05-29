@@ -40,3 +40,36 @@ jobs:
       # If you add a check, add it to Justfile — CI picks it up automatically.
       - name: Run all checks
         run: just check
+
+  init-smoke:
+    name: Scaffold init smoke
+    # Upstream-only. This builds a fresh project from `just init` and asserts
+    # the `ping` worked example survives — true for ckeletin-rust itself, but
+    # not for derived projects (which replace ping). The guard keeps the job
+    # from failing in downstream forks while still gating `just init` here.
+    # Closes the gap from issue #1: init_smoke is #[ignore]d (too slow for
+    # `just check`) and so was never gated until now.
+    if: github.repository == 'peiman/ckeletin-rust'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-initsmoke-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install just
+        run: cargo install just --locked
+
+      # Builds a fresh scaffold from `just init` in a temp dir and runs its
+      # full test suite — catches both a non-compiling project and a mangled
+      # integration-test file (cargo check alone compiles only lib + bin).
+      - name: Run scaffold init smoke test
+        run: just init-smoke

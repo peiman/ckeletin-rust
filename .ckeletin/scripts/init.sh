@@ -48,18 +48,15 @@ sedi "s/\"CKELETIN_\"/\"${UPPER_NAME}_\"/" crates/cli/src/main.rs
 sedi "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
 sedi "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
 
-# 6. Strip demo code
-rm -f crates/domain/src/ping.rs
-sedi '/pub mod ping;/d' crates/domain/src/lib.rs
-
-rm -f crates/cli/src/ping.rs
-sedi '/mod ping;/d' crates/cli/src/main.rs
-sedi '/Ping,/d' crates/cli/src/root.rs
-sedi '/Check connectivity/d' crates/cli/src/root.rs
-sedi '/Commands::Ping/d' crates/cli/src/main.rs
-
-# Remove ping-related integration tests
-sedi '/ping/Id' crates/cli/tests/cli.rs
+# NOTE: The `ping` command is intentionally KEPT as the worked example. The
+# steps above already renamed it (domain logic, CLI handler, and both the
+# human and JSON integration tests). Do NOT strip it. `ping` is the only
+# subcommand; deleting it leaves an empty `Commands` enum that the entry point
+# cannot match exhaustively, so the project would fail to compile — and init
+# would abort before creating the git repo (see issue #1). ckeletin-go's
+# scaffold keeps its demo command for the same reason. Replace or extend
+# `ping` when you add your first real command — see AGENTS.md, "Adding a New
+# Command". Ref: https://github.com/peiman/ckeletin-rust/issues/1
 
 # 6. Reset CHANGELOG.md
 cat > CHANGELOG.md << 'CHANGELOG'
@@ -73,10 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 CHANGELOG
 
-# 7. Verify
+# 7. Verify — compile ALL targets (lib, bin, AND tests). Checking only the
+#    default targets would miss a broken integration-test file: a test that
+#    fails to compile does not surface until the user's first `just check`.
 echo "Verifying..."
-if cargo check --workspace -q; then
-    echo "Workspace compiles."
+if cargo check --workspace --all-targets -q; then
+    echo "Workspace and tests compile."
 else
     echo "Error: workspace does not compile after init. Something went wrong."
     exit 1
