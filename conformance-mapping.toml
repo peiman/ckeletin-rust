@@ -12,7 +12,7 @@ spec_version = "0.4.0"
 title = "Four-layer architecture"
 status = "met"
 enforcement_level = "compile-time"
-evidence = "Cargo workspace: crates/domain, crates/infrastructure, crates/cli, crates/conform"
+evidence = "Cargo workspace members: crates/domain, crates/infrastructure, crates/cli, plus framework crates .ckeletin/crate and .ckeletin/conform"
 checks = ["cargo check --workspace"]
 violation_tests = []
 violation_evidence = "Structural: crates/domain/Cargo.toml has no dep on infrastructure/cli. crates/infrastructure/Cargo.toml has no dep on domain/cli. Import violations tested via trybuild: crates/domain/tests/violations/domain_imports_infrastructure.rs"
@@ -67,11 +67,11 @@ violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target.
 [requirements.CKSPEC-ARCH-007]
 title = "Package location enforcement"
 status = "met"
-enforcement_level = "compile-time"
-evidence = "All source in designated crate directories. Workspace structure enforces this."
+enforcement_level = "design"
+evidence = "All source lives in designated crate directories; no source files at the workspace root. Enforced structurally by the Cargo workspace layout (a stray root .rs file belongs to no crate and is not built) rather than by a dedicated file-placement linter — hence enforcement_level=design, not compile-time."
 checks = ["cargo check --workspace"]
 violation_tests = []
-violation_evidence = "Structural: crates/cli/Cargo.toml has [[bin]] target. crates/domain/Cargo.toml and crates/infrastructure/Cargo.toml are library-only. No source files at workspace root."
+violation_evidence = "Structural: crates/cli/Cargo.toml has the only [[bin]] target. crates/domain and crates/infrastructure are library-only. No source files at workspace root."
 
 # ═══════════════════════════════════════════════════════════════
 # Enforcement (CKSPEC-ENF-001 through CKSPEC-ENF-007)
@@ -113,7 +113,7 @@ violation_tests = []
 title = "Conformance mapping completeness"
 status = "met"
 enforcement_level = "script"
-evidence = "scripts/conform.sh validates mapping covers all 35 spec requirements before reporting."
+evidence = "The conformance generator (.ckeletin/conform/src/main.rs, run by `just conform`) loads the spec requirement IDs (live, with vendored conformance/requirements.json fallback) and exits non-zero on any unmapped requirement before reporting."
 checks = []
 violation_tests = []
 
@@ -121,7 +121,7 @@ violation_tests = []
 title = "Violation tests for enforcement claims"
 status = "met"
 enforcement_level = "script"
-evidence = "6 trybuild violation tests for compile-time claims. just conform verifies violation_tests exist for claims above honor-system."
+evidence = "7 trybuild violation tests back the compile-time claims. `just conform` verifies each declared violation_test file exists and emits an ENF-007 feedback signal for any above-honor-system claim lacking a violation test or violation_evidence."
 checks = ["cargo test --workspace"]
 violation_tests = []
 
@@ -129,7 +129,7 @@ violation_tests = []
 title = "Automatic feedback signals"
 status = "met"
 enforcement_level = "script"
-evidence = "scripts/conform.sh outputs feedback signals for missing violation tests and checkable requirements without checks."
+evidence = "`just conform` (.ckeletin/conform/src/main.rs) emits feedback signals for missing violation tests and above-honor-system claims lacking proof; surfaced in the report summary (feedback_signals)."
 checks = []
 violation_tests = []
 
@@ -149,7 +149,7 @@ violation_tests = []
 title = "Minimum coverage threshold"
 status = "met"
 enforcement_level = "ci"
-evidence = "just coverage enforces 85% via cargo-llvm-cov."
+evidence = "`just coverage` enforces 85% line coverage via cargo-llvm-cov, gated by the CI coverage job (.github/workflows/ci.yml). The build-time conformance generator (.ckeletin/conform) is an excluded, documented denominator; the rest of the workspace is ~99.8%."
 checks = []
 violation_tests = []
 
@@ -199,9 +199,9 @@ violation_tests = []
 
 [requirements.CKSPEC-OUT-004]
 title = "Shadow logging"
-status = "met"
+status = "partial"
 enforcement_level = "script"
-evidence = "tracing::debug! in Output::success() and Output::error(). Lands in file layer."
+evidence = "Output::success/message/error emit tracing events to the audit layer, but two gaps remain vs the MUST: (1) success/message log only the command name, not the rendered data the spec requires the audit log to contain; (2) the file audit layer is off by default (LogConfig.file_enabled=false in .ckeletin/crate/src/logging.rs), so the audit stream is not 'always active regardless of output mode'. Honest status: partial. Closing it needs the rendered data added to the success/message events and an always-on audit sink."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
 

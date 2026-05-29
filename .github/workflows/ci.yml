@@ -73,3 +73,61 @@ jobs:
       # integration-test file (cargo check alone compiles only lib + bin).
       - name: Run scaffold init smoke test
         run: just init-smoke
+
+  coverage:
+    name: Coverage (85% min)
+    # CKSPEC-TEST-002: the 85% threshold must run in the gating pipeline and
+    # fail the build below it. `just coverage` is too heavy for the local
+    # `just check` loop, so it gates here in CI instead.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Install just
+        run: cargo install just --locked
+
+      - name: Coverage (fails under 85%)
+        run: just coverage
+
+  conform:
+    name: Conformance
+    # CKSPEC-ENF-005/006/007: validate the conformance mapping covers every
+    # spec requirement (fail on unmapped), run each mapped check, and emit
+    # feedback signals. Regression-protects the conformance claims so the
+    # report cannot silently drift from the code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-conform-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install just
+        run: cargo install just --locked
+
+      - name: Conformance generator
+        run: just conform
