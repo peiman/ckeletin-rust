@@ -228,6 +228,7 @@ dependencies = [
  "infrastructure",
  "owo-colors",
  "predicates",
+ "tempfile",
 ]
 
 [[package]]

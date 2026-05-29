@@ -199,11 +199,12 @@ violation_tests = []
 
 [requirements.CKSPEC-OUT-004]
 title = "Shadow logging"
-status = "partial"
+status = "met"
 enforcement_level = "script"
-evidence = "Output::success/message/error emit tracing events to the audit layer, but two gaps remain vs the MUST: (1) success/message log only the command name, not the rendered data the spec requires the audit log to contain; (2) the file audit layer is off by default (LogConfig.file_enabled=false in .ckeletin/crate/src/logging.rs), so the audit stream is not 'always active regardless of output mode'. Honest status: partial. Closing it needs the rendered data added to the success/message events and an always-on audit sink."
+evidence = "Output::success/message/error shadow-log the rendered data (not just the command name) to the audit layer, and file audit logging is on by default (Config.log_file_enabled defaults to true; --no-audit or log_file_enabled=false opts out). Active in both human and JSON modes."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
+violation_evidence = "Shadow-log unit tests success_shadow_logs_the_rendered_data + message_shadow_logs_the_message_text in .ckeletin/crate/src/output.rs; default-on/opt-out integration tests audit_log_written_by_default + no_audit_flag_disables_the_log_file in crates/cli/tests/cli.rs"
 
 [requirements.CKSPEC-OUT-005]
 title = "Output isolation from business logic"

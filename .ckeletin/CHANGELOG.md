@@ -2,6 +2,15 @@
 
 ## [0.2.3] - 2026-05-29
 
+### Changed
+- Audit logging (CKSPEC-OUT-004) is now **on by default**
+  (`Config.log_file_enabled` defaults to `true`), and
+  `Output::success`/`message`/`error` shadow-log the *rendered data*, not
+  just the command name — so the audit stream contains what the user saw.
+  Downstream projects receive this on `just ckeletin-update` and will start
+  writing `logs/app.log` by default; opt out with `log_file_enabled = false`
+  (or the `--no-audit` flag if the consumer wires it into its CLI).
+
 ### Fixed
 - `just init <name>` produced a non-compiling, un-committed project.
   The strip-demo step deleted `ping` (the only subcommand), leaving an

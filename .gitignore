@@ -3,3 +3,6 @@
 *.swo
 *~
 .DS_Store
+
+# Audit logs (CKSPEC-OUT-004 — written to ./logs/ by default)
+logs/
