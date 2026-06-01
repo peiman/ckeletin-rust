@@ -9,7 +9,7 @@ Key characteristics:
 - **Compile-time architecture enforcement:** Crate boundaries in Cargo.toml prevent reverse dependencies. Violation tests prove it (CKSPEC-ENF-006)
 - **Three-stream output:** stdout (data), stderr (status), log file (audit)
 - **JSON mode:** `--output json` flag for machine-readable output on every command
-- **Shadow logging:** Every output operation logged to audit stream
+- **Shadow logging:** every output logged to an audit file (on by default, at `~/.config/<app>/logs/`; `--no-audit` or the `log_location` config to change)
 - **Layered configuration:** defaults → TOML file → environment variables → CLI flags
 - **TDD:** Tests first, always. 85% minimum coverage
 - **Dependency injection over mocking** — writer injection pattern, no mock frameworks

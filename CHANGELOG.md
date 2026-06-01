@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in config. `logs/` is gitignored.
 
 ### Changed
+- The audit log (CKSPEC-OUT-004) now defaults to a stable per-user
+  location — `~/.config/<app>/logs/` (XDG-style on every platform,
+  including macOS) — instead of `./logs/` relative to the working
+  directory. A new `log_location` config field selects `"config"`
+  (default) or `"platform"` (the OS-native app-data dir, e.g.
+  `~/Library/Application Support/<app>` on macOS); an absolute
+  `log_file_path` overrides both. Resolution is dependency-free (env
+  vars only). The first-run notice prints the resolved path.
 - Conformance reporting brought in line with the code and ckeletin
   spec v0.4.0. `CONFORMANCE.md` is now reconciled with
   `conformance-mapping.toml` (the machine source of truth) and

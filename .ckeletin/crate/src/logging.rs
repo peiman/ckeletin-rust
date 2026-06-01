@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     fmt, layer::SubscriberExt, registry, util::SubscriberInitExt, EnvFilter, Layer,
@@ -35,6 +36,79 @@ impl Default for LogConfig {
 /// Build an EnvFilter from a level string, falling back to the provided default.
 fn build_filter(level: &str, fallback: &str) -> EnvFilter {
     EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new(fallback))
+}
+
+/// Read an environment variable as an absolute path, if set and absolute.
+fn env_abs(name: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(std::env::var_os(name)?);
+    p.is_absolute().then_some(p)
+}
+
+/// The user's home directory: `$HOME` (Unix) or `%USERPROFILE%` (Windows).
+fn home() -> Option<PathBuf> {
+    env_abs("HOME").or_else(|| env_abs("USERPROFILE"))
+}
+
+/// The user's config-home directory, XDG-style and uniform across platforms:
+/// `$XDG_CONFIG_HOME` if set (and absolute), else `~/.config`. This is
+/// `~/.config` even on macOS (we intentionally do not use `~/Library/Application
+/// Support` here — that is the opt-in "platform" location). Falls back to a
+/// relative `.config` only if the home directory cannot be determined.
+fn config_home() -> PathBuf {
+    env_abs("XDG_CONFIG_HOME")
+        .or_else(|| home().map(|h| h.join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"))
+}
+
+/// The OS-native application-data directory (no app segment yet):
+/// `~/Library/Application Support` (macOS), `$XDG_DATA_HOME` or `~/.local/share`
+/// (Linux/other Unix), `%APPDATA%` (Windows).
+fn platform_data_home() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        home().map(|h| h.join("Library").join("Application Support"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        env_abs("APPDATA")
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        env_abs("XDG_DATA_HOME").or_else(|| home().map(|h| h.join(".local").join("share")))
+    }
+}
+
+/// Compute the per-app base directory the audit log is anchored under. Pure —
+/// the base directories are injected — so it is unit-testable without touching
+/// the environment.
+fn audit_base_in(
+    location: &str,
+    app: &str,
+    config_home: PathBuf,
+    data_home: Option<PathBuf>,
+) -> PathBuf {
+    match location {
+        // OS-native application-data dir: ~/Library/Application Support/<app>
+        // (macOS), ~/.local/share/<app> (Linux), %APPDATA%\<app> (Windows).
+        "platform" | "native" | "os" => data_home.unwrap_or(config_home).join(app),
+        // Default: XDG config home, uniform across platforms — ~/.config/<app>.
+        _ => config_home.join(app),
+    }
+}
+
+/// Resolve where the audit log should live (CKSPEC-OUT-004).
+///
+/// An absolute `configured` path is honored verbatim. A relative one (the
+/// default `logs/app.log`) is anchored under the per-app base directory chosen
+/// by `location`: `"config"` → `~/.config/<app>` (default), `"platform"` → the
+/// OS-native application-data directory. This keeps the audit log in a stable
+/// per-user place instead of wherever the binary happens to be invoked.
+pub fn resolve_audit_path(configured: &str, location: &str, app: &str) -> PathBuf {
+    let p = Path::new(configured);
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    audit_base_in(location, app, config_home(), platform_data_home()).join(p)
 }
 
 /// Prepare the log file directory and appender.
@@ -198,5 +272,63 @@ mod tests {
     fn log_guard_without_file_has_no_worker() {
         let guard = LogGuard { _guard: None };
         assert!(guard._guard.is_none());
+    }
+
+    // ── Audit path resolution (CKSPEC-OUT-004) ──────────────────
+
+    #[test]
+    fn audit_base_config_uses_config_home() {
+        let base = audit_base_in(
+            "config",
+            "myapp",
+            PathBuf::from("/home/u/.config"),
+            Some(PathBuf::from("/home/u/.local/share")),
+        );
+        assert_eq!(base, PathBuf::from("/home/u/.config/myapp"));
+    }
+
+    #[test]
+    fn audit_base_platform_uses_the_native_data_dir() {
+        let base = audit_base_in(
+            "platform",
+            "myapp",
+            PathBuf::from("/Users/u/.config"),
+            Some(PathBuf::from("/Users/u/Library/Application Support")),
+        );
+        assert_eq!(
+            base,
+            PathBuf::from("/Users/u/Library/Application Support/myapp")
+        );
+    }
+
+    #[test]
+    fn audit_base_platform_falls_back_to_config_home_without_a_data_dir() {
+        let base = audit_base_in("platform", "myapp", PathBuf::from("/c"), None);
+        assert_eq!(base, PathBuf::from("/c/myapp"));
+    }
+
+    #[test]
+    fn audit_base_unknown_location_defaults_to_config() {
+        let base = audit_base_in(
+            "bogus",
+            "myapp",
+            PathBuf::from("/c"),
+            Some(PathBuf::from("/d")),
+        );
+        assert_eq!(base, PathBuf::from("/c/myapp"));
+    }
+
+    #[test]
+    fn resolve_audit_path_honors_an_absolute_path_verbatim() {
+        let p = resolve_audit_path("/var/log/app.log", "config", "myapp");
+        assert_eq!(p, PathBuf::from("/var/log/app.log"));
+    }
+
+    #[test]
+    fn resolve_audit_path_anchors_relative_under_xdg_config_home() {
+        std::env::set_var("XDG_CONFIG_HOME", "/tmp/ckxdg-test");
+        let p = resolve_audit_path("logs/app.log", "config", "myapp");
+        std::env::remove_var("XDG_CONFIG_HOME");
+        assert_eq!(p, PathBuf::from("/tmp/ckxdg-test/myapp/logs/app.log"));
     }
 }

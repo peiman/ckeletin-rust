@@ -74,23 +74,29 @@ fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
         config.log_level.clone()
     };
 
-    // Audit log (CKSPEC-OUT-004) is on by default; --no-audit turns it off
-    // for this run.
+    // Audit log (CKSPEC-OUT-004) is on by default; --no-audit turns it off for
+    // this run. The path is resolved to a stable per-user location (default
+    // ~/.config/<app>/logs/app.log) so it doesn't depend on the cwd.
     let audit_enabled = config.log_file_enabled && !cli.no_audit;
+    let audit_path = logging::resolve_audit_path(
+        &config.log_file_path,
+        &config.log_location,
+        env!("CARGO_BIN_NAME"),
+    );
 
     // First-run heads-up: tell the user once — when the audit log directory is
     // first created — that we're writing it and how to turn it off. Goes to the
     // status stream (stderr), human mode only; silent in JSON mode and on every
     // later run.
     if audit_enabled && !json_mode {
-        let first_run = std::path::Path::new(&config.log_file_path)
+        let first_run = audit_path
             .parent()
             .is_some_and(|dir| !dir.as_os_str().is_empty() && !dir.exists());
         if first_run {
             eprintln!(
                 "note: writing an audit log to {} (this notice won't repeat; \
                  disable with --no-audit or log_file_enabled=false in config)",
-                config.log_file_path
+                audit_path.display()
             );
         }
     }
@@ -103,7 +109,7 @@ fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
             log_level
         },
         file_enabled: audit_enabled,
-        file_path: config.log_file_path.clone(),
+        file_path: audit_path.to_string_lossy().into_owned(),
         file_level: config.log_file_level.clone(),
     };
     let _guard = logging::init(&log_config)?;
