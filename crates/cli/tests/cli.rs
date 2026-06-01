@@ -2,7 +2,21 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn cmd() -> Command {
-    Command::cargo_bin("ckeletin-rust").unwrap()
+    let mut c = Command::cargo_bin("ckeletin-rust").unwrap();
+    // These tests don't care about the audit log; disable it so runs don't
+    // write into the developer's real ~/.config dir. Audit-specific tests opt
+    // back in via `audit_cmd`, redirecting the log to a temp dir.
+    c.arg("--no-audit");
+    c
+}
+
+/// A command with audit logging ENABLED but its base dir (XDG config home)
+/// redirected into `xdg`, so the default `~/.config/<app>/logs` lands in a
+/// temp dir instead of the developer's real config dir.
+fn audit_cmd(xdg: &std::path::Path) -> Command {
+    let mut c = Command::cargo_bin("ckeletin-rust").unwrap();
+    c.env("XDG_CONFIG_HOME", xdg);
+    c
 }
 
 #[test]
@@ -156,29 +170,31 @@ fn json_verbose_no_stderr_leak() {
         .stderr(predicate::str::is_empty());
 }
 
-// ── Audit log tests (CKSPEC-OUT-004 — audit is on by default) ──
-// These run in a temp cwd so the audit log lands there, not in the repo.
+// ── Audit log tests (CKSPEC-OUT-004 — audit on by default) ──
+// Audit defaults to ~/.config/<app>/logs; these redirect XDG_CONFIG_HOME to a
+// temp dir so the log lands there, not in the developer's real config dir.
+// The "ckeletin-rust" path segment is the binary name (CARGO_BIN_NAME), which
+// `just init` renames alongside this file.
 
 #[test]
-fn audit_log_written_by_default() {
+fn audit_log_written_under_config_home_by_default() {
     let tmp = tempfile::tempdir().unwrap();
-    cmd().current_dir(tmp.path()).arg("ping").assert().success();
+    audit_cmd(tmp.path()).arg("ping").assert().success();
     assert!(
-        tmp.path().join("logs").is_dir(),
-        "audit log directory should be created by default"
+        tmp.path().join("ckeletin-rust/logs").is_dir(),
+        "audit log should be created under <config>/<app>/logs by default"
     );
 }
 
 #[test]
 fn no_audit_flag_disables_the_log_file() {
     let tmp = tempfile::tempdir().unwrap();
-    cmd()
-        .current_dir(tmp.path())
+    audit_cmd(tmp.path())
         .args(["--no-audit", "ping"])
         .assert()
         .success();
     assert!(
-        !tmp.path().join("logs").exists(),
+        !tmp.path().join("ckeletin-rust").exists(),
         "--no-audit should write no audit log"
     );
 }
@@ -186,8 +202,7 @@ fn no_audit_flag_disables_the_log_file() {
 #[test]
 fn first_run_prints_audit_notice_to_stderr() {
     let tmp = tempfile::tempdir().unwrap();
-    cmd()
-        .current_dir(tmp.path())
+    audit_cmd(tmp.path())
         .arg("ping")
         .assert()
         .success()
@@ -198,10 +213,9 @@ fn first_run_prints_audit_notice_to_stderr() {
 fn audit_notice_is_silent_on_later_runs() {
     let tmp = tempfile::tempdir().unwrap();
     // First run creates the log dir and prints the one-time notice.
-    cmd().current_dir(tmp.path()).arg("ping").assert().success();
+    audit_cmd(tmp.path()).arg("ping").assert().success();
     // Second run: the dir already exists, so no notice.
-    cmd()
-        .current_dir(tmp.path())
+    audit_cmd(tmp.path())
         .arg("ping")
         .assert()
         .success()
@@ -211,8 +225,7 @@ fn audit_notice_is_silent_on_later_runs() {
 #[test]
 fn json_mode_suppresses_the_audit_notice() {
     let tmp = tempfile::tempdir().unwrap();
-    cmd()
-        .current_dir(tmp.path())
+    audit_cmd(tmp.path())
         .args(["--output", "json", "ping"])
         .assert()
         .success()

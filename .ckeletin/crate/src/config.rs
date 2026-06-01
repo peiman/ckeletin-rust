@@ -27,6 +27,13 @@ pub struct Config {
     #[serde(default = "defaults::log_file_level")]
     pub log_file_level: String,
 
+    /// Where the audit log lives when `log_file_path` is relative:
+    /// "config" → ~/.config/<app> (default, XDG-style on every platform),
+    /// "platform" → the OS-native app-data dir (e.g. ~/Library/Application
+    /// Support/<app> on macOS). An absolute `log_file_path` overrides this.
+    #[serde(default = "defaults::log_location")]
+    pub log_location: String,
+
     /// Enable JSON output mode globally.
     #[serde(default)]
     pub json: bool,
@@ -45,6 +52,9 @@ mod defaults {
     pub fn log_file_level() -> String {
         "debug".to_string()
     }
+    pub fn log_location() -> String {
+        "config".to_string()
+    }
 }
 
 impl Default for Config {
@@ -54,6 +64,7 @@ impl Default for Config {
             log_file_enabled: defaults::log_file_enabled(),
             log_file_path: defaults::log_file_path(),
             log_file_level: defaults::log_file_level(),
+            log_location: defaults::log_location(),
             json: false,
         }
     }
@@ -107,6 +118,7 @@ mod tests {
         assert!(config.log_file_enabled, "audit log is on by default");
         assert_eq!(config.log_file_path, "logs/app.log");
         assert_eq!(config.log_file_level, "debug");
+        assert_eq!(config.log_location, "config");
         assert!(!config.json);
     }
 
@@ -184,6 +196,7 @@ mod tests {
         std::env::set_var("CKEVERY_LOG_FILE_ENABLED", "true");
         std::env::set_var("CKEVERY_LOG_FILE_PATH", "/tmp/test.log");
         std::env::set_var("CKEVERY_LOG_FILE_LEVEL", "trace");
+        std::env::set_var("CKEVERY_LOG_LOCATION", "platform");
         std::env::set_var("CKEVERY_JSON", "true");
 
         let config = Config::load(None, prefix).unwrap();
@@ -197,12 +210,17 @@ mod tests {
             config.log_file_level, "trace",
             "LOG_FILE_LEVEL env not applied"
         );
+        assert_eq!(
+            config.log_location, "platform",
+            "LOG_LOCATION env not applied"
+        );
         assert!(config.json, "JSON env not applied");
 
         std::env::remove_var("CKEVERY_LOG_LEVEL");
         std::env::remove_var("CKEVERY_LOG_FILE_ENABLED");
         std::env::remove_var("CKEVERY_LOG_FILE_PATH");
         std::env::remove_var("CKEVERY_LOG_FILE_LEVEL");
+        std::env::remove_var("CKEVERY_LOG_LOCATION");
         std::env::remove_var("CKEVERY_JSON");
     }
 
