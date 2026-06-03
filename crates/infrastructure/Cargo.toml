@@ -2,6 +2,7 @@
 name = "infrastructure"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 # ENFORCEMENT: No dependency on domain or cli.

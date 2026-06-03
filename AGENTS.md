@@ -2,7 +2,7 @@
 
 ## About This Project
 
-**ckeletin-rust** is a Rust CLI scaffold implementing the [ckeletin spec](https://github.com/peiman/ckeletin) v0.4.0. It enforces four-layer architecture at compile time through a Cargo workspace with separate crates.
+**ckeletin-rust** is a Rust CLI scaffold implementing the [ckeletin spec](https://github.com/peiman/ckeletin) (spec version tracked in CONFORMANCE.md / `conformance-mapping.toml`, not hardcoded here). It enforces four-layer architecture at compile time through a Cargo workspace with separate crates.
 
 Key characteristics:
 - **Workspace with 3 crates:** `domain` (business logic), `infrastructure` (config, logging, output), `cli` (entry + commands)
@@ -119,7 +119,7 @@ crates/
 
 - **Domain has zero framework deps.** If you need logging in domain, return data and let the CLI layer log it.
 - **All output through `Output` struct.** Never `println!` or `eprintln!` in domain or infrastructure. The output system handles stream routing and shadow logging.
-- **Domain types handed to `Output::success` must implement both `Serialize` and `Display`.** `Output::success<T: Serialize + Display>` renders via `Display` in human mode and serializes via `Serialize` in JSON mode. One value, two outputs — presentation lives on the type. Implementing only `Serialize` means the type doesn't compile into a `success()` call; implementing only `Display` means JSON mode silently renders a string blob. See `crates/cli/src/ping.rs` (minimal) and `workhorse/crates/domain/src/replay.rs` (richer, with nested sections) for worked examples.
+- **Domain types handed to `Output::success` must implement both `Serialize` and `Display`.** `Output::success<T: Serialize + Display>` renders via `Display` in human mode and serializes via `Serialize` in JSON mode. One value, two outputs — presentation lives on the type. Implementing only `Serialize` means the type doesn't compile into a `success()` call; implementing only `Display` means JSON mode silently renders a string blob. See `crates/cli/src/ping.rs` for a worked example.
 - **No-data success paths use `Output::message()`, not `Output::success()` with a `&format!("...")` string.** The `message` helper (added in ckeletin 0.2.2) writes a human sentence in text mode and an envelope with `data: {"message": msg}` in JSON mode — a stable, structured shape instead of a raw string blob.
 - **Error envelopes must identify the failing subcommand.** Capture the command name from `&cli.command` *before* moving `cli` into `run_inner`, thread it into `Output::error`. Use an exhaustive `match` (not a default arm) so new subcommands are a compile error until they declare their own name — no silent `"init"` fallback. See `crates/cli/src/main.rs::subcommand_name`.
 - **Typed configuration.** Add fields to `Config` struct in `config.rs`. figment deserializes at startup — no runtime type assertions.
@@ -167,10 +167,9 @@ same incorrect values.
    loudly — not silently at runtime.
 5. Commit cites the capture source (file path or transcript).
 
-Worked reference implementation:
-[workhorse's adapter-authoring protocol](https://github.com/peiman/workhorse/blob/main/workhorse-vault/references/adapter-authoring-protocol.md)
-— the history section documents three separate incidents that
-earned this discipline before it was written down.
+This discipline was earned the hard way — three separate incidents of
+constants picked from intuition drifting silently against the real system,
+each with green tests the whole time, before it was written down.
 
 ### Cross-plug-point alias tests
 
@@ -186,9 +185,9 @@ a substring of any signal in B. The test iterates the plug-point
 registry, so adding a new plug-point automatically gets guarded
 without per-plugin test code.
 
-Worked reference:
-[workhorse's `adapter_signals_do_not_alias_across_adapters`](https://github.com/peiman/workhorse/blob/main/crates/domain/src/runtime.rs)
-in `crates/domain/src/runtime.rs`.
+The invariant to assert: for every pair of plug-points (A, B) with A ≠ B, no
+signal string in A is a substring of any signal string in B — iterated over the
+plug-point registry so a new plug-point is guarded automatically.
 
 ### When these patterns apply (and when they don't)
 
@@ -205,5 +204,24 @@ speculatively in a single-plugin CLI.
 | `just check` fails on fmt | `just fmt` then retry |
 | Clippy pedantic warning | Fix it or add targeted `#[allow]` with justification |
 | Violation test fails after adding dependency | You probably added a framework dep to domain — remove it |
-| `cargo deny check` fails | Check `deny.toml` allowlist or update advisory database |
+| `cargo deny check` fails (advisory) | See "Advisory DB floats by design" below |
+| `just conform` fails after a spec bump | `just conform-refresh` to pull the new spec, review the diff, reconcile `conformance-mapping.toml` |
 | Integration test can't find binary | `cargo build` first, or run via `cargo test -p cli` |
+
+### Advisory DB floats by design
+
+The Rust **toolchain is pinned** (`rust-toolchain.toml` + CI) for reproducible
+builds and stable trybuild snapshots. The RustSec **advisory database that
+`cargo deny` consults is deliberately NOT pinned** — it floats so new CVEs
+against transitive deps surface immediately. So CI can go red with zero commits
+here when a fresh advisory lands (a weekly scheduled job catches this even on an
+idle repo). That is the security system working. Remediation order:
+
+1. Read the `RUSTSEC-…` id in the cargo-deny output.
+2. `cargo update` (or `cargo update -p <crate>`), re-run `just ckeletin-deny`. A
+   stale `Cargo.lock` is the usual cause; a patched release clears it.
+3. If still flagged with no fix available, add a time-boxed entry to
+   `[advisories] ignore` in `deny.toml` with the id, a reason, and a revisit
+   date. Remove it once a fix ships.
+
+Do **not** "fix" this by pinning the advisory DB — that hides future CVEs.

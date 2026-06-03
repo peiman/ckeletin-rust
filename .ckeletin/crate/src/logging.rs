@@ -49,15 +49,20 @@ fn home() -> Option<PathBuf> {
     env_abs("HOME").or_else(|| env_abs("USERPROFILE"))
 }
 
+/// Pure config-home resolution given the candidate env values — unit-testable
+/// without touching process-global env (which races under parallel tests).
+fn config_home_from(xdg: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    xdg.or_else(|| home.map(|h| h.join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"))
+}
+
 /// The user's config-home directory, XDG-style and uniform across platforms:
 /// `$XDG_CONFIG_HOME` if set (and absolute), else `~/.config`. This is
 /// `~/.config` even on macOS (we intentionally do not use `~/Library/Application
 /// Support` here — that is the opt-in "platform" location). Falls back to a
 /// relative `.config` only if the home directory cannot be determined.
 fn config_home() -> PathBuf {
-    env_abs("XDG_CONFIG_HOME")
-        .or_else(|| home().map(|h| h.join(".config")))
-        .unwrap_or_else(|| PathBuf::from(".config"))
+    config_home_from(env_abs("XDG_CONFIG_HOME"), home())
 }
 
 /// The OS-native application-data directory (no app segment yet):
@@ -324,11 +329,24 @@ mod tests {
         assert_eq!(p, PathBuf::from("/var/log/app.log"));
     }
 
+    // config_home resolution is tested purely (env injected) so these never
+    // mutate process-global env — which would race under parallel test threads.
+
     #[test]
-    fn resolve_audit_path_anchors_relative_under_xdg_config_home() {
-        std::env::set_var("XDG_CONFIG_HOME", "/tmp/ckxdg-test");
-        let p = resolve_audit_path("logs/app.log", "config", "myapp");
-        std::env::remove_var("XDG_CONFIG_HOME");
-        assert_eq!(p, PathBuf::from("/tmp/ckxdg-test/myapp/logs/app.log"));
+    fn config_home_prefers_xdg_when_set() {
+        let p = config_home_from(Some(PathBuf::from("/x")), Some(PathBuf::from("/home/u")));
+        assert_eq!(p, PathBuf::from("/x"));
+    }
+
+    #[test]
+    fn config_home_falls_back_to_home_dotconfig() {
+        let p = config_home_from(None, Some(PathBuf::from("/home/u")));
+        assert_eq!(p, PathBuf::from("/home/u/.config"));
+    }
+
+    #[test]
+    fn config_home_last_resort_is_relative_dotconfig() {
+        let p = config_home_from(None, None);
+        assert_eq!(p, PathBuf::from(".config"));
     }
 }

@@ -64,11 +64,13 @@ fn version_flag_surfaces_build_identity() {
 
 #[test]
 fn version_shows_version() {
+    // Derive the expected version from the crate so this doesn't break on the
+    // first version bump.
     cmd()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.1.0"));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]
