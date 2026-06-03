@@ -1,0 +1,22 @@
+version: 2
+
+# Keeps pinned versions fresh via reviewable PRs instead of silent drift:
+# - cargo: workspace dependencies + Cargo.lock (also surfaces advisory-driven
+#   bumps), complementing the weekly `advisories` CI heartbeat.
+# - github-actions: the `uses:` action refs in .github/workflows (checkout,
+#   cache, rust-toolchain).
+# Note: the `cargo install <tool> --version X` pins in ci.yml are run-commands,
+# not action refs, so they are bumped by hand when a tool releases — a
+# deliberate, reviewable change, which is the point.
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
