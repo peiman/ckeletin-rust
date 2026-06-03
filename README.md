@@ -25,18 +25,14 @@ cargo run -p cli -- --output json ping
 
 ## Spec Conformance
 
-Implements [ckeletin spec](https://github.com/peiman/ckeletin) v0.4.0 — 35 requirements across 6 domains (all met):
+Implements the [ckeletin spec](https://github.com/peiman/ckeletin) across six
+domains — Architecture, Enforcement, Testing, Output, Agent Readiness, and
+Changelog. Conformance is validated in CI by `just conform` against
+`conformance-mapping.toml`.
 
-| Domain | Requirements | Status |
-|--------|-------------|--------|
-| Architecture | 7 | All met (compile-time enforcement) |
-| Enforcement | 7 | All met (`just conform` generator, CI-gated) |
-| Testing | 4 | All met (85% coverage gated in CI) |
-| Output | 5 | All met |
-| Agent Readiness | 5 | All met |
-| Changelog | 7 | All met |
-
-See [CONFORMANCE.md](CONFORMANCE.md) for evidence per requirement.
+See **[CONFORMANCE.md](CONFORMANCE.md)** for the exact spec version, requirement
+count, and per-requirement evidence — kept there as the single source of truth
+rather than duplicated here, where it would drift.
 
 ## License
 
