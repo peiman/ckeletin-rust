@@ -6,11 +6,11 @@ ckeletin_version := `cat .ckeletin/VERSION`
 # Show framework version and check for local modifications
 ckeletin-health:
     @echo "ckeletin framework v{{ckeletin_version}}"
-    @if git diff --quiet .ckeletin/ 2>/dev/null; then \
+    @if [ -z "$(git status --porcelain .ckeletin/)" ]; then \
         echo "Status: clean"; \
     else \
-        echo "WARNING: .ckeletin/ has local modifications — next update will overwrite them"; \
-        git diff --name-only .ckeletin/; \
+        echo "WARNING: .ckeletin/ has local changes (incl. added files) — next update will shadow/ignore them"; \
+        git status --porcelain .ckeletin/; \
     fi
     @cargo check --workspace -q && echo "Workspace: compiles" || echo "Workspace: BROKEN"
 
@@ -48,8 +48,8 @@ ckeletin-check-update:
 ckeletin-update version="main":
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! git diff --quiet .ckeletin/ 2>/dev/null; then
-        echo "Error: .ckeletin/ has uncommitted changes. Commit or revert first."
+    if [ -n "$(git status --porcelain .ckeletin/)" ]; then
+        echo "Error: .ckeletin/ has uncommitted changes (incl. added files). Commit or revert first."
         exit 1
     fi
     OLD_VERSION=$(cat .ckeletin/VERSION)
@@ -88,6 +88,12 @@ ckeletin-update-dry-run version="main":
     echo "Files that would change:"
     git diff HEAD..ckeletin-upstream/{{version}} --stat -- .ckeletin/
 
-# Run conformance generator
+# Run conformance generator (hermetic: reads the committed vendored spec, no network)
 conform *ARGS:
     cargo run -p ckeletin-conform -q -- {{ARGS}}
+
+# Refresh the vendored spec snapshot from upstream (maintainer action). Fetches
+# the latest requirements.json, rewrites conformance/requirements.json — then
+# review the diff and reconcile conformance-mapping.toml + the spec_version.
+conform-refresh:
+    cargo run -p ckeletin-conform -q -- --refresh
