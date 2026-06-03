@@ -17,22 +17,30 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=build.rs");
 
-    // ONE command resolves commit + dirty atomically, so there is no
-    // independent-failure gap where a dirty check fails while the commit read
-    // succeeds and bakes a false-clean identity (the two-command trap workhorse
-    // hit in SH-004). If `describe` fails outright, both degrade together.
-    let (commit, dirty) = match git(&["describe", "--always", "--dirty", "--abbrev=7"]) {
-        Some(d) if d.ends_with("-dirty") => (d.trim_end_matches("-dirty").to_string(), "true"),
-        Some(d) => (d, "false"),
-        None => ("unknown".to_string(), "false"),
-    };
+    // ONE command resolves the commit SHA and the dirty marker together, so there
+    // is no independent-failure gap where a dirty check fails while the commit
+    // read succeeds and bakes a false-clean identity (the two-command trap
+    // workhorse hit in SH-004). `--match` with an impossible pattern forces a bare
+    // abbreviated SHA rather than a tag-relative string: that keeps `commit` a real
+    // SHA AND makes the `-dirty` suffix unambiguous (hex can never end in "-dirty",
+    // so a tag named "...-dirty" cannot masquerade as a dirty tree). `--dirty`
+    // reflects TRACKED modifications only — git's own semantics, matching
+    // ckeletin-go; untracked-only files are not "dirty" here. `version.rs` splits
+    // the suffix, so commit and dirty can never disagree.
+    let commit = git(&[
+        "describe",
+        "--always",
+        "--abbrev=7",
+        "--dirty",
+        "--match=__ckeletin_no_such_tag__",
+    ])
+    .unwrap_or_else(|| "unknown".to_string());
     // Date is informational; its independent failure degrades to an honest
     // "unknown" date, not a false cleanliness claim — so a separate call is safe.
     let date =
         git(&["show", "-s", "--format=%cs", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=CKELETIN_BUILD_COMMIT={commit}");
-    println!("cargo:rustc-env=CKELETIN_BUILD_DIRTY={dirty}");
     println!("cargo:rustc-env=CKELETIN_BUILD_DATE={date}");
 }
 

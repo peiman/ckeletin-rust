@@ -45,7 +45,9 @@ fn version_command_json_has_fields() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"command\": \"version\""))
+        .stdout(predicate::str::contains("\"version\":"))
         .stdout(predicate::str::contains("\"commit\":"))
+        .stdout(predicate::str::contains("\"date\":"))
         .stdout(predicate::str::contains("\"dirty\":"));
 }
 

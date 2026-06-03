@@ -29,16 +29,22 @@ pub struct BuildInfo {
     pub version: String,
     /// Short git commit identity the binary was built from, or [`UNKNOWN`].
     pub commit: String,
-    /// Commit (or build) date, or [`UNKNOWN`].
+    /// Commit date (`git %cs`, `YYYY-MM-DD`), rendered after the word
+    /// "built" in [`version_line`](BuildInfo::version_line); or [`UNKNOWN`].
     pub date: String,
-    /// Whether the working tree had uncommitted changes at build time.
+    /// Whether the working tree had uncommitted TRACKED changes at build time.
+    /// Only meaningful when `commit != UNKNOWN`: the producer must derive both
+    /// from one atomic git read so cleanliness is never claimed for an unknown
+    /// commit (see the scaffold's `version::split_commit_dirty`).
     pub dirty: bool,
 }
 
 impl BuildInfo {
     /// Construct from already-resolved values. The adopter reads the baked env at
     /// their own call site (so `env!`/`option_env!` resolve in their crate) and
-    /// hands the values here — see `crates/cli/src/version.rs`.
+    /// hands the values here — see `crates/cli/src/version.rs`. This is a
+    /// convenience constructor for display-only provenance; it performs NO
+    /// validation — honest inputs are the producer's responsibility.
     pub fn new(
         version: impl Into<String>,
         commit: impl Into<String>,
@@ -97,6 +103,14 @@ mod tests {
     fn display_matches_version_line() {
         let info = BuildInfo::new("0.1.0", "abc1234", "2026-06-03", false);
         assert_eq!(format!("{info}"), info.version_line());
+    }
+
+    #[test]
+    fn version_line_renders_unknown_fields_honestly() {
+        // The honest-degradation path: when git can't resolve, UNKNOWN must flow
+        // through verbatim — never dropped or special-cased into a real-looking line.
+        let info = BuildInfo::new("0.1.0", UNKNOWN, UNKNOWN, false);
+        assert_eq!(info.version_line(), "0.1.0, commit unknown, built unknown");
     }
 
     #[test]
