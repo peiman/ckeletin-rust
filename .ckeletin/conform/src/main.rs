@@ -87,47 +87,61 @@ struct ViolationTestResult {
 
 // ── Requirement ID loading (replaces hardcoded list) ────────────
 
-/// Load the spec requirement IDs. Strategy:
-/// 1. Fetch latest requirements.json from the spec repo
-/// 2. If fetch succeeds, cache it to the vendored path and use it
-/// 3. If fetch fails, fall back to the vendored copy with a warning
-/// 4. If vendored copy also missing, abort
-fn load_spec_requirements(json_mode: bool) -> (Vec<String>, String) {
-    // Try fetching from upstream
-    match fetch_upstream() {
-        Ok(manifest) => {
-            // Cache the fetched copy for offline use
-            if let Ok(json) = serde_json::to_string_pretty(&serde_json::json!({
-                "spec_version": manifest.spec_version,
-                "requirements": manifest.requirements.iter().map(|r| {
-                    serde_json::json!({"id": r.id})
-                }).collect::<Vec<_>>()
-            })) {
-                let _ = std::fs::write(VENDORED_REQUIREMENTS, format!("{json}\n"));
-            }
-            let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
-            (ids, manifest.spec_version)
-        }
-        Err(fetch_err) => {
-            // Fall back to vendored copy
-            match load_vendored() {
-                Ok(manifest) => {
-                    if !json_mode {
-                        eprintln!(
-                            "Warning: could not fetch latest requirements ({fetch_err}). Using vendored copy (spec {}).",
-                            manifest.spec_version
-                        );
-                    }
-                    let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
-                    (ids, manifest.spec_version)
-                }
-                Err(vendor_err) => {
-                    eprintln!("Error: cannot load spec requirements.");
-                    eprintln!("  Fetch failed: {fetch_err}");
-                    eprintln!("  Vendored copy: {vendor_err}");
-                    eprintln!("  Run: curl -sL {REQUIREMENTS_JSON_URL} > {VENDORED_REQUIREMENTS}");
+/// Load the spec requirement IDs.
+///
+/// Default (CI / gating): read ONLY the committed vendored requirements.json —
+/// offline, deterministic, and side-effect-free. The conformance gate must not
+/// depend on a moving upstream branch (a push to a *different* repo could
+/// otherwise turn this repo's CI red) nor mutate a tracked file mid-run.
+///
+/// With `refresh = true` (`conform --refresh` / `just conform-refresh`): fetch
+/// the latest requirements from the spec repo and rewrite the vendored copy, so
+/// a maintainer can review the diff and reconcile conformance-mapping.toml
+/// deliberately — turning a spec bump into an intentional, reviewed commit.
+fn load_spec_requirements(refresh: bool, json_mode: bool) -> (Vec<String>, String) {
+    if refresh {
+        match fetch_upstream() {
+            Ok(manifest) => {
+                let json = serde_json::to_string_pretty(&serde_json::json!({
+                    "spec_version": manifest.spec_version,
+                    "requirements": manifest.requirements.iter().map(|r| {
+                        serde_json::json!({"id": r.id})
+                    }).collect::<Vec<_>>()
+                }))
+                .expect("serialize requirements");
+                if let Err(e) = std::fs::write(VENDORED_REQUIREMENTS, format!("{json}\n")) {
+                    eprintln!(
+                        "Error: fetched spec but could not write {VENDORED_REQUIREMENTS}: {e}"
+                    );
                     std::process::exit(1);
                 }
+                if !json_mode {
+                    eprintln!(
+                        "Refreshed {VENDORED_REQUIREMENTS} from upstream (spec {}). Review the diff and reconcile conformance-mapping.toml.",
+                        manifest.spec_version
+                    );
+                }
+                let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
+                (ids, manifest.spec_version)
+            }
+            Err(fetch_err) => {
+                eprintln!(
+                    "Error: --refresh requested but could not fetch upstream spec: {fetch_err}"
+                );
+                eprintln!("  URL: {REQUIREMENTS_JSON_URL}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match load_vendored() {
+            Ok(manifest) => {
+                let ids = manifest.requirements.iter().map(|r| r.id.clone()).collect();
+                (ids, manifest.spec_version)
+            }
+            Err(vendor_err) => {
+                eprintln!("Error: cannot read vendored spec {VENDORED_REQUIREMENTS}: {vendor_err}");
+                eprintln!("  Run `cargo run -p ckeletin-conform -- --refresh` (or `just conform-refresh`) to fetch it.");
+                std::process::exit(1);
             }
         }
     }
@@ -176,6 +190,11 @@ fn lacks_enforcement_proof(req: &RequirementMapping) -> bool {
 
 fn main() {
     let json_mode = std::env::args().any(|a| a == "--json");
+    // `--refresh` fetches the latest spec from upstream and rewrites the
+    // vendored requirements.json. Without it (the CI/gating default) the tool is
+    // hermetic: it reads only the committed vendored spec, with no network and
+    // no file writes.
+    let refresh = std::env::args().any(|a| a == "--refresh");
 
     let mapping_content = match std::fs::read_to_string("conformance-mapping.toml") {
         Ok(c) => c,
@@ -194,14 +213,30 @@ fn main() {
     };
 
     // ── Load requirement IDs from spec (replaces hardcoded list) ──
-    let (expected_ids, spec_version) = load_spec_requirements(json_mode);
+    let (expected_ids, spec_version) = load_spec_requirements(refresh, json_mode);
 
-    // ── Spec version comparison ────────────────────────────────
-    if mapping.spec_version != spec_version && !json_mode {
-        eprintln!(
-            "Warning: mapping targets spec {} but requirements.json is spec {}",
-            mapping.spec_version, spec_version
+    // ── Spec version comparison (SSOT) ─────────────────────────
+    // The mapping and the vendored requirements.json MUST target the same spec
+    // version; a mismatch means the report is reasoning about the wrong
+    // requirement set, so fail rather than warn (and don't silence it in JSON
+    // mode). `just conform-refresh` updates the vendored spec for review.
+    if mapping.spec_version != spec_version {
+        let msg = format!(
+            "conformance-mapping.toml targets spec {} but {} is spec {}; reconcile them",
+            mapping.spec_version, VENDORED_REQUIREMENTS, spec_version
         );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "status": "error", "error": msg })
+                )
+                .unwrap()
+            );
+        } else {
+            eprintln!("Error: {msg}.");
+        }
+        std::process::exit(1);
     }
 
     // ── ENF-005: Completeness check ─────────────────────────────
