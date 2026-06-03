@@ -14,7 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # CLI framework — ONLY in cli crate (CKSPEC-ARCH-003)
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive", "env", "string"] }
 
 # Configuration — infrastructure concern (CKSPEC-ARCH-003 notes)
 figment = { version = "0.10", features = ["toml", "env"] }

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 /// A production-ready Rust CLI built with ckeletin-rust.
 #[derive(Parser, Debug)]
-#[command(name = "ckeletin-rust", version, about)]
+#[command(name = "ckeletin-rust", about)]
 pub struct Cli {
     /// Output format: text (human-readable) or json (machine-readable)
     #[arg(long, global = true, default_value = "text")]
@@ -37,4 +37,6 @@ pub enum OutputFormat {
 pub enum Commands {
     /// Check connectivity — returns pong
     Ping,
+    /// Print the binary's build identity (version, commit, date, dirty)
+    Version,
 }

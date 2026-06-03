@@ -1,5 +1,20 @@
 # ckeletin Framework Changelog
 
+## [0.2.5] - 2026-06-03
+
+### Added
+- **Build identity (`build_info::BuildInfo`).** A prefix-agnostic framework
+  primitive that surfaces the git provenance baked into a binary at compile
+  time — version + commit + date + dirty — rendered by `version_line()`
+  (mirrors ckeletin-go's `--version`: `"<version>, commit <commit>, built
+  <date> (dirty)"`). The scaffold ships the worked example of consuming it:
+  `crates/cli/build.rs` bakes the identity (one atomic `git describe --dirty`,
+  so there is no false-clean gap; degrades to `unknown` on any git failure) and
+  a `version` command renders it in human + JSON, with `--version` wired to the
+  same formatter. Build-identity surfacing only; runtime staleness checking is
+  left to the adopter (out of the shared cross-language contract). First
+  consumer: workhorse (SH-004). Implements CKSPEC-OUT-006.
+
 ## [0.2.4] - 2026-05-31
 
 ### Changed

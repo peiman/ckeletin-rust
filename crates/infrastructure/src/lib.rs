@@ -1,4 +1,5 @@
 // Re-export framework modules — project code imports from infrastructure, not ckeletin
+pub use ckeletin::build_info;
 pub use ckeletin::config;
 pub use ckeletin::logging;
 pub use ckeletin::output;

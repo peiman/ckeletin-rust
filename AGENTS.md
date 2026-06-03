@@ -104,6 +104,17 @@ crates/
 > `Output`. Not every domain module needs algorithms; sometimes its value is giving the
 > pipeline a typed contract instead of raw strings.
 
+> **Consuming a framework primitive: the `version` command.**
+> `ping` shows a command built on your OWN domain type. `version`
+> (`crates/cli/src/version.rs`) shows the other case: a command built on a
+> FRAMEWORK primitive — `ckeletin::build_info::BuildInfo`. The build identity is
+> baked at compile time by `crates/cli/build.rs` (one atomic `git describe
+> --dirty`, degrading to `unknown` on any git failure) and read explicitly via
+> `option_env!` in `version::current()` — the `env!` wiring is deliberately not
+> hidden behind a macro so you can see it. `--version` is wired to the same
+> `BuildInfo::version_line()` formatter in `main::parse_args`. Keep, customize,
+> or delete it like `ping`.
+
 ## Coding Conventions
 
 - **Domain has zero framework deps.** If you need logging in domain, return data and let the CLI layer log it.

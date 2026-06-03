@@ -29,6 +29,38 @@ fn help_shows_usage() {
 }
 
 #[test]
+fn version_command_human_mode() {
+    cmd()
+        .arg("version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commit"))
+        .stdout(predicate::str::contains("built"));
+}
+
+#[test]
+fn version_command_json_has_fields() {
+    cmd()
+        .args(["--output", "json", "version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"command\": \"version\""))
+        .stdout(predicate::str::contains("\"commit\":"))
+        .stdout(predicate::str::contains("\"dirty\":"));
+}
+
+#[test]
+fn version_flag_surfaces_build_identity() {
+    // `--version` renders BuildInfo::version_line() (the single formatter),
+    // injected at runtime in main::parse_args.
+    cmd()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commit"));
+}
+
+#[test]
 fn version_shows_version() {
     cmd()
         .arg("--version")

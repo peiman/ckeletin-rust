@@ -3,8 +3,8 @@
 
 mod ping;
 mod root;
+mod version;
 
-use clap::Parser;
 use infrastructure::{
     config::Config,
     logging::{self, LogConfig},
@@ -18,7 +18,7 @@ fn main() {
 fn run() -> i32 {
     // Parse CLI args first — we need to know the output format
     // before we can route errors correctly.
-    let cli = root::Cli::parse();
+    let cli = parse_args();
     let json_mode = matches!(cli.output, root::OutputFormat::Json);
     // Capture the subcommand name BEFORE moving `cli` into `run_inner`,
     // so the error envelope can identify which subcommand failed
@@ -49,6 +49,21 @@ fn run() -> i32 {
     }
 }
 
+/// Parse args, injecting the runtime build-identity line as clap's `--version`
+/// output. Keeps `BuildInfo::version_line()` the single formatter (SSOT) while
+/// `--version` surfaces the baked commit/date/dirty. clap's `get_matches()` and
+/// `Error::exit` handle `--version` / `--help` / parse errors by exiting.
+fn parse_args() -> root::Cli {
+    use clap::{CommandFactory, FromArgMatches};
+    let matches = root::Cli::command()
+        .version(version::current().version_line())
+        .get_matches();
+    match root::Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(e) => e.exit(),
+    }
+}
+
 /// Map a parsed `Commands` variant to its CLI-visible name. A plain
 /// `match` so adding a new subcommand is a compile error here until a
 /// name is assigned — no silent "init" fallback. Consumers of ckeletin
@@ -56,6 +71,7 @@ fn run() -> i32 {
 fn subcommand_name(command: &root::Commands) -> &'static str {
     match command {
         root::Commands::Ping => "ping",
+        root::Commands::Version => "version",
     }
 }
 
@@ -123,6 +139,7 @@ fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Dispatch to command handler
     match cli.command {
         root::Commands::Ping => ping::execute(&output)?,
+        root::Commands::Version => version::execute(&output)?,
     }
 
     Ok(())
