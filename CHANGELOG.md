@@ -59,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in config. `logs/` is gitignored.
 
 ### Changed
+- Dependency maintenance (Dependabot batch). Bumped `toml` 0.8 → 1 in
+  the conformance generator (`.ckeletin/conform`) — the generator parses
+  the mapping via `toml::from_str`, an API stable across the major; the
+  config path keeps figment's toml 0.8. Routine patch bumps: `serde_json`
+  1.0.149 → 1.0.150, `clap` 4.6.0 → 4.6.1, `assert_cmd` 2.2.0 → 2.2.2,
+  `tracing-appender` 0.2.4 → 0.2.5. CI actions: `actions/checkout` v4 → v6,
+  `actions/cache` v4 → v5. The `dtolnay/rust-toolchain` pin stays at 1.96.0
+  (bumping it requires refreshing the trybuild snapshots).
 - The audit log (CKSPEC-OUT-004) now defaults to a stable per-user
   location — `~/.config/<app>/logs/` (XDG-style on every platform,
   including macOS) — instead of `./logs/` relative to the working
