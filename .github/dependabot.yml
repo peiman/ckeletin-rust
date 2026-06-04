@@ -20,3 +20,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # The Rust toolchain is pinned for trybuild-snapshot determinism and bumped
+      # by hand via the documented procedure (rust-toolchain.toml → refresh the
+      # .stderr snapshots → match the ci.yml/release.yml pins). It is never a
+      # one-click action bump. Worse, dtolnay/rust-toolchain publishes
+      # forward-dated placeholder version tags, so Dependabot proposes toolchains
+      # that don't exist yet (e.g. 1.100.0, which 404s at `rustup install`).
+      # Same philosophy as the by-hand `cargo install <tool>` pins above.
+      - dependency-name: "dtolnay/rust-toolchain"
