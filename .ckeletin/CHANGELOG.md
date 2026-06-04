@@ -1,5 +1,23 @@
 # ckeletin Framework Changelog
 
+## [0.2.9] - 2026-06-04
+
+### Added
+- **Secret scanning with gitleaks (CKSPEC-ENF-001).** Detects hardcoded
+  credentials committed to the repo, using the industry-standard
+  [gitleaks](https://github.com/gitleaks/gitleaks) (MIT, single static binary).
+  - `ckeletin-secrets` recipe — scans the working tree. Standalone, not part of
+    `just check` (gitleaks is an external non-cargo tool, so a missing gitleaks
+    never blocks the cargo gate).
+  - `.ckeletin/configs/gitleaks.toml` — framework default config (extends the
+    built-in ruleset, excludes `target/`); override via a root `.gitleaks.toml`.
+  - `ckeletin-doctor` now reports gitleaks presence.
+  - Worked examples (project-owned, kept/replaced by adopters): a lefthook
+    pre-commit staged scan that skips cleanly when gitleaks is absent but fails
+    on a real secret, and a `secret-scan` CI job that scans full git history via
+    the gitleaks **CLI** (not the commercial gitleaks-action).
+  Mirrors ckeletin-go's secret scanning.
+
 ## [0.2.8] - 2026-06-04
 
 ### Added

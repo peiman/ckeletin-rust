@@ -164,3 +164,24 @@ jobs:
 
       - name: Conformance generator
         run: just conform
+
+  secret-scan:
+    name: Secret scan
+    # Hard gate for hardcoded credentials. Uses the gitleaks CLI binary directly
+    # (NOT gitleaks-action, which carries a commercial EULA for org-owned repos).
+    # Pinned version, like the other CI tools — bump deliberately.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history so `gitleaks git` scans every commit
+
+      - name: Install gitleaks
+        run: |
+          VERSION=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+
+      - name: Scan git history for secrets
+        run: gitleaks git -v --redact --no-banner --config .ckeletin/configs/gitleaks.toml
