@@ -97,3 +97,10 @@ conform *ARGS:
 # review the diff and reconcile conformance-mapping.toml + the spec_version.
 conform-refresh:
     cargo run -p ckeletin-conform -q -- --refresh
+
+# Regenerate the published conformance report (CKSPEC-ENF-010). The committed
+# conformance-report.json is the deterministic artifact the spec-repo aggregator
+# fetches; `just conform` fails if it drifts from conformance-mapping.toml, so
+# run this after editing the mapping and commit the result.
+conform-report:
+    cargo run -p ckeletin-conform -q -- --report
