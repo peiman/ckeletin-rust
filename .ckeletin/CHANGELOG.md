@@ -1,5 +1,28 @@
 # ckeletin Framework Changelog
 
+## [0.2.7] - 2026-06-04
+
+### Added
+- **`ckeletin-update-check-compatibility` recipe.** Applies the upstream
+  `.ckeletin/` to the working tree, runs `cargo check --workspace`, then
+  restores the committed framework via a trap (interrupt-safe) — letting an
+  adopter confirm an update compiles against their code without keeping it.
+  Brings the Rust framework to parity with ckeletin-go's
+  `task ckeletin:update:check-compatibility`. No import rewriting is needed
+  (Rust references crates by name, not an embedded module path).
+- **Upstream self-guard on the update recipes.** `ckeletin-update`,
+  `ckeletin-update-dry-run`, and `ckeletin-update-check-compatibility` now
+  short-circuit (exit 0 with a message) when run inside the ckeletin-rust
+  upstream repo itself, detected via the workspace `repository` slug in the
+  root `Cargo.toml` (`just init` rewrites it for derived projects). Mirrors
+  ckeletin-go's go.mod module-path guard. Regression test:
+  `.ckeletin/crate/tests/update_guard.rs`.
+
+### Changed
+- The upstream remote URL and identity slug are now SSOT `just` variables
+  (`ckeletin_upstream_url`, `ckeletin_upstream_slug`) instead of being
+  hardcoded across the update recipes.
+
 ## [0.2.6] - 2026-06-04
 
 ### Added
