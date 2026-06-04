@@ -11,6 +11,12 @@ rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/peiman/ckeletin-rust"
 
+# Profile used by `cargo bolero` (just ckeletin-fuzz). Required by bolero for
+# active fuzz runs; unused by normal builds/tests.
+[profile.fuzz]
+inherits = "release"
+debug = true
+
 [workspace.dependencies]
 # Serialization — cross-cutting concern permitted in domain (CKSPEC-ARCH-004 notes)
 serde = { version = "1", features = ["derive"] }
@@ -39,3 +45,6 @@ predicates = "3"
 rstest = "0.26"
 tempfile = "3"
 trybuild = "1"
+# Fuzzing — runs on STABLE Rust with --sanitizer NONE; corpus replays as
+# ordinary `cargo test` (a deterministic regression guard). See `just ckeletin-fuzz`.
+bolero = "0.13"

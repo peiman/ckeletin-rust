@@ -56,6 +56,7 @@ ckeletin-doctor:
     report cargo-cyclonedx "cargo-cyclonedx (just ckeletin-sbom)" "optional: cargo install cargo-cyclonedx --locked"
     report grype "grype (just ckeletin-sbom-scan)" "optional: brew install grype"
     report cargo-geiger "cargo-geiger (just ckeletin-geiger, advisory)" "optional: cargo install cargo-geiger --locked"
+    report cargo-bolero "cargo-bolero (coverage-guided fuzzing; bolero lib runs on stable)" "optional: cargo install cargo-bolero --locked"
     if cargo fmt --version >/dev/null 2>&1; then echo "  rustfmt component: installed"; else echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"; fi
     if cargo clippy --version >/dev/null 2>&1; then echo "  clippy component: installed"; else echo "  clippy component: NOT FOUND (rustup component add clippy)"; fi
     echo ""
@@ -149,6 +150,20 @@ ckeletin-geiger:
     # an absolute --manifest-path. Point it at the cli crate — the shipped binary.
     cargo geiger --forbid-only --manifest-path "$(pwd)/crates/cli/Cargo.toml" \
         || echo "cargo-geiger exited non-zero — advisory only, not a gate."
+
+# Exercise the bolero fuzz targets on STABLE — generative testing that feeds
+# many arbitrary inputs through each target (the same engine `just check` runs,
+# invoked directly so you can iterate). This is the cross-platform, no-nightly
+# path and the one this scaffold ships working.
+#
+# Coverage-guided ACTIVE fuzzing (bolero's libfuzzer engine, `cargo bolero test`)
+# is deliberately NOT wired here: it needs nightly AND a dedicated fuzz crate
+# excluded from the workspace, because its sancov instrumentation otherwise leaks
+# into sibling test binaries (e.g. the cli integration tests) and fails to link.
+# Add such a crate when you want continuous coverage-guided fuzzing — see
+# https://github.com/camshaft/bolero. Install: cargo install cargo-bolero --locked.
+ckeletin-fuzz:
+    cargo test --workspace --test fuzz_ping
 
 # Check if a newer framework version is available
 ckeletin-check-update:
