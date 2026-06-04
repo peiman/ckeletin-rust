@@ -1,5 +1,30 @@
 # ckeletin Framework Changelog
 
+## [0.2.12] - 2026-06-04
+
+### Added
+- **Fuzzing worked example with bolero.** Chose
+  [bolero](https://github.com/camshaft/bolero) because it is the only mainstream
+  Rust fuzzer whose targets run on **stable** (the scaffold's pinned toolchain) —
+  unlike cargo-fuzz, which needs nightly.
+  - `crates/domain/tests/fuzz_ping.rs` — the `ping` worked example's fuzz
+    counterpart: feeds arbitrary messages into `PingResult` and asserts `Display`
+    and serde round-trip never panic for any input. It runs as an ordinary
+    `cargo test` (bounded, deterministic, generative) on stable, so it is a
+    **regression guard inside `just check`** — every PR gets fuzz-generated
+    coverage with no nightly and no extra tooling.
+  - `ckeletin-fuzz` recipe — exercises the bolero targets on stable
+    (`cargo test --test fuzz_ping`), for iterating on a target directly.
+  - `bolero` added as a **dev-dependency** (does not relax domain's runtime
+    "only serde" boundary); a `[profile.fuzz]` is defined for bolero.
+  - `ckeletin-doctor` reports cargo-bolero.
+  - **Deliberately not wired:** coverage-guided *active* fuzzing (bolero's
+    libfuzzer engine) needs nightly AND a dedicated fuzz crate excluded from the
+    workspace — its sancov instrumentation otherwise leaks into sibling test
+    binaries (the cli integration tests) and fails to link on both macOS arm64
+    and Linux. Documented in the `ckeletin-fuzz` recipe as the next step for
+    teams that want continuous coverage-guided fuzzing.
+
 ## [0.2.11] - 2026-06-04
 
 ### Added
