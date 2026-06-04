@@ -67,13 +67,14 @@ ckeletin-fmt-check:
     cargo fmt --all -- --check
 
 ckeletin-clippy:
+    # Lints applied to ALL targets (including tests) — these flag real defects
+    # wherever they appear.
     cargo clippy --workspace --all-targets --all-features -- \
         -D warnings \
         -D clippy::cast_possible_truncation \
         -D clippy::cast_sign_loss \
         -D clippy::cast_possible_wrap \
         -D clippy::cast_precision_loss \
-        -D clippy::float_cmp \
         -D clippy::lossy_float_literal \
         -D clippy::dbg_macro \
         -D clippy::todo \
@@ -82,6 +83,12 @@ ckeletin-clippy:
         -D clippy::rc_buffer \
         -D clippy::verbose_file_reads \
         -D clippy::wildcard_dependencies
+    # float_cmp is denied for library/binary code only, NOT tests: exact-sentinel
+    # assertions like `assert_eq!(score, 0.0)` on values that are 0.0/1.0 by
+    # construction are idiomatic and correct in test code. Scoping it to --lib
+    # --bins keeps the safety for real logic without fighting test assertions
+    # (workhorse adoption feedback, 2026-06-04).
+    cargo clippy --workspace --lib --bins --all-features -- -A warnings -D clippy::float_cmp
 
 ckeletin-deny:
     cargo deny check
@@ -203,10 +210,27 @@ ckeletin-update version="main":
     git checkout ckeletin-upstream/{{version}} -- .ckeletin/
     NEW_VERSION=$(cat .ckeletin/VERSION)
     cargo generate-lockfile
+    # Tier 1: must still COMPILE. A non-compiling update is incompatible — roll
+    # back fully (the framework crate or a moved API broke the build).
     if ! cargo check --workspace; then
         echo "Error: workspace does not compile after update. Rolling back."
         git checkout HEAD -- .ckeletin/
         cargo generate-lockfile
+        exit 1
+    fi
+    # Tier 2: must pass the SAME gate the project runs — `just check` (clippy
+    # lints, deny, tests), NOT just `cargo check`. A release can tighten the gate
+    # (e.g. new clippy lints); auto-committing a red `just check` is what bit
+    # workhorse (2026-06-04). On failure DON'T roll back and DON'T commit: the
+    # update is left in the working tree so you can fix the new violations and
+    # commit yourself.
+    if ! just check; then
+        echo ""
+        echo "Update to v$NEW_VERSION applied to the working tree, but 'just check' fails."
+        echo "This release likely tightened a gate (e.g. clippy). Fix the violations"
+        echo "above (real fix, or a reasoned #[allow]), then commit:"
+        echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
+        echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
         exit 1
     fi
     echo ""
@@ -235,12 +259,12 @@ ckeletin-update-dry-run version="main":
     echo "Files that would change:"
     git diff HEAD..ckeletin-upstream/{{version}} --stat -- .ckeletin/
 
-# Applies the upstream .ckeletin/ to the working tree, runs `cargo check`, then
-# restores your committed framework (via a trap, so restoration happens even on
-# failure or interrupt). Rust needs no import rewriting — crates are referenced
-# by name, not an embedded module path. Mirrors ckeletin-go's
+# Applies the upstream .ckeletin/ to the working tree, runs the full `just check`
+# gate, then restores your committed framework (via a trap, so restoration
+# happens even on failure or interrupt). Rust needs no import rewriting — crates
+# are referenced by name, not an embedded module path. Mirrors ckeletin-go's
 # `task ckeletin:update:check-compatibility`.
-# Check if the available framework update compiles against your code (no changes kept)
+# Check if the available framework update passes `just check` against your code (no changes kept)
 ckeletin-update-check-compatibility version="main":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -272,23 +296,26 @@ ckeletin-update-check-compatibility version="main":
     trap restore EXIT
     git checkout "$CHECKOUT_REF" -- .ckeletin/
     cargo generate-lockfile
+    # Run the FULL gate (`just check`), not just `cargo check` — so this also
+    # surfaces clippy/test failures a release might introduce (e.g. tightened
+    # lints), giving an early warning before `just ckeletin-update` is run.
     echo "Checking compatibility with framework update ({{version}})..."
     set +e
-    CHECK_OUTPUT=$(cargo check --workspace 2>&1)
+    CHECK_OUTPUT=$(just check 2>&1)
     CHECK_RESULT=$?
     set -e
     if [ "$CHECK_RESULT" -eq 0 ]; then
-        echo "Compatible — safe to update."
+        echo "Compatible — 'just check' passes against the update."
         echo ""
         echo "Changes available:"
         git diff --stat HEAD "$CHECKOUT_REF" -- .ckeletin/
         echo ""
         echo "Run: just ckeletin-update"
     else
-        echo "Incompatible — cargo check failed against the update:"
+        echo "Incompatible — 'just check' fails against the update:"
         echo "$CHECK_OUTPUT"
         echo ""
-        echo "Review the errors above before running just ckeletin-update."
+        echo "Fix these (real fix or a reasoned #[allow]) before/while running just ckeletin-update."
         exit 1
     fi
 

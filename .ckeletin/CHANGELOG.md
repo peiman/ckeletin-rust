@@ -1,5 +1,37 @@
 # ckeletin Framework Changelog
 
+## [0.2.13] - 2026-06-04
+
+### Fixed
+- **`ckeletin-update` now guards with the real gate (`just check`), not just
+  `cargo check`.** `cargo check` builds only lib/bins, so it did NOT run the
+  clippy lint set or tests that `just check` enforces — meaning a release that
+  tightened the gate could **auto-commit a red `just check`** on a consumer's
+  branch with no signal at update time (reported by workhorse, 2026-06-04). Now:
+  - a non-compiling update still rolls back fully (unchanged);
+  - an update that compiles but fails `just check` is **left in the working tree,
+    uncommitted** (not rolled back), with guidance to fix the new violations and
+    commit — so you can fix forward instead of silently landing a red gate.
+  - `ckeletin-update-check-compatibility` likewise runs `just check` now, so it
+    surfaces tightened-gate failures *before* you update.
+
+### Changed
+- **`float_cmp` is now scoped to library/binary code, not tests.** The hardened
+  clippy gate (0.2.11) ran `float_cmp` over `--all-targets`, flagging idiomatic
+  exact-sentinel test assertions like `assert_eq!(score, 0.0)` (workhorse hit
+  ~18 such sites). It is now a separate `--lib --bins` pass, keeping the safety
+  for real logic without fighting correct test assertions. The other hardened
+  lints (cast safety, etc.) remain on all targets — they caught a real
+  truncation bug downstream.
+
+### Upgrading from 0.2.11 (note for adopters)
+The 0.2.11 hardened clippy gate may flag pre-existing cast sites in your code on
+the first `just check` after updating. Fix forward: use `try_from` (returning an
+error) where a value can genuinely overflow or lose sign; add a reasoned
+`#[allow(clippy::cast_…)]` with a one-line rationale where the conversion is safe
+by construction (e.g. a bounded counter). Run `just ckeletin-update-check-compatibility`
+first to preview what the new gate will flag.
+
 ## [0.2.12] - 2026-06-04
 
 ### Added
