@@ -40,6 +40,29 @@ jobs:
       - name: Check advisories
         run: cargo deny check advisories
 
+  unsafe-surface:
+    name: Unsafe surface (advisory)
+    # cargo-geiger reports the unsafe surface of the dependency tree. ADVISORY —
+    # an unsafe count is a metric, not a gate, so (like the advisories heartbeat)
+    # it runs only on the weekly schedule + manual dispatch, never blocking PRs,
+    # and continue-on-error keeps it green even if cargo-geiger itself hiccups.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install just
+        run: cargo install just --version 1.50.0 --locked
+
+      - name: Install cargo-geiger
+        run: cargo install cargo-geiger --locked
+
+      - name: Report unsafe surface
+        run: just ckeletin-geiger
+
   check:
     name: Check
     if: github.event_name != 'schedule'

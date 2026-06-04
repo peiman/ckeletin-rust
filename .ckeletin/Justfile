@@ -55,6 +55,7 @@ ckeletin-doctor:
     report gitleaks "gitleaks (just ckeletin-secrets, pre-commit)" "required: brew install gitleaks"
     report cargo-cyclonedx "cargo-cyclonedx (just ckeletin-sbom)" "optional: cargo install cargo-cyclonedx --locked"
     report grype "grype (just ckeletin-sbom-scan)" "optional: brew install grype"
+    report cargo-geiger "cargo-geiger (just ckeletin-geiger, advisory)" "optional: cargo install cargo-geiger --locked"
     if cargo fmt --version >/dev/null 2>&1; then echo "  rustfmt component: installed"; else echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"; fi
     if cargo clippy --version >/dev/null 2>&1; then echo "  clippy component: installed"; else echo "  clippy component: NOT FOUND (rustup component add clippy)"; fi
     echo ""
@@ -65,7 +66,21 @@ ckeletin-fmt-check:
     cargo fmt --all -- --check
 
 ckeletin-clippy:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- \
+        -D warnings \
+        -D clippy::cast_possible_truncation \
+        -D clippy::cast_sign_loss \
+        -D clippy::cast_possible_wrap \
+        -D clippy::cast_precision_loss \
+        -D clippy::float_cmp \
+        -D clippy::lossy_float_literal \
+        -D clippy::dbg_macro \
+        -D clippy::todo \
+        -D clippy::unimplemented \
+        -D clippy::mem_forget \
+        -D clippy::rc_buffer \
+        -D clippy::verbose_file_reads \
+        -D clippy::wildcard_dependencies
 
 ckeletin-deny:
     cargo deny check
@@ -116,6 +131,24 @@ ckeletin-sbom-scan: ckeletin-sbom
         exit 1
     fi
     grype sbom:sbom.cdx.json --fail-on high
+
+# Report the `unsafe` Rust surface across the dependency tree with cargo-geiger.
+# ADVISORY ONLY — an unsafe count is a metric, not a pass/fail (dependencies
+# legitimately use unsafe), so this never gates `just check`. cargo-geiger builds
+# the dependency tree (slow) and is community-maintained. `--forbid-only` is the
+# fast mode: it reports which crates declare #![forbid(unsafe_code)].
+# Install: cargo install cargo-geiger --locked.
+ckeletin-geiger:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if ! command -v cargo-geiger >/dev/null 2>&1; then
+        echo "cargo-geiger not found (advisory tool). Install: cargo install cargo-geiger --locked"
+        exit 0
+    fi
+    # cargo-geiger needs a concrete package (not the virtual workspace root) and
+    # an absolute --manifest-path. Point it at the cli crate — the shipped binary.
+    cargo geiger --forbid-only --manifest-path "$(pwd)/crates/cli/Cargo.toml" \
+        || echo "cargo-geiger exited non-zero — advisory only, not a gate."
 
 # Check if a newer framework version is available
 ckeletin-check-update:

@@ -6,7 +6,9 @@ pre-commit:
       run: cargo fmt --all -- --check
       fail_text: "Code not formatted. Run: cargo fmt --all"
     clippy:
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # SSOT: run the framework's hardened clippy recipe (security/correctness
+      # lints + -D warnings) so pre-commit and `just check` enforce the same set.
+      run: just ckeletin-clippy
       fail_text: "Clippy warnings found. Run: cargo clippy --fix"
     gitleaks:
       # Staged-only secret scan (fast). Skips cleanly when gitleaks is not
