@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.4 --locked
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy, rustfmt, llvm-tools-preview
 
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: llvm-tools-preview
 
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache cargo
         uses: actions/cache@v4
