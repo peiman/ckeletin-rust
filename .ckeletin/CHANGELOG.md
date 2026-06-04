@@ -1,5 +1,23 @@
 # ckeletin Framework Changelog
 
+## [0.2.10] - 2026-06-04
+
+### Added
+- **SBOM generation + vulnerability scanning (supply-chain readiness).**
+  - `ckeletin-sbom` recipe — generates `sbom.cdx.json`, a CycloneDX 1.5 SBOM of
+    the CLI binary's full dependency graph, using
+    [cargo-cyclonedx](https://github.com/CycloneDX/cyclonedx-rust-cargo) (the
+    official OWASP CycloneDX cargo plugin; stable toolchain, no nightly).
+  - `ckeletin-sbom-scan` recipe — generates then scans the SBOM with
+    [grype](https://github.com/anchore/grype), failing on High severity or above.
+  - Both standalone (external tools, not in `just check`). `ckeletin-doctor`
+    reports cargo-cyclonedx + grype presence. Generated `*.cdx.json` are
+    gitignored.
+  - Worked example (project-owned): a `sbom` CI job that generates + scans and
+    uploads the SBOM as a build artifact for compliance/consumers.
+  Chose the Rust-native OWASP generator over syft for a leaner footprint (one
+  external binary) while keeping grype for parity with ckeletin-go's scanner.
+
 ## [0.2.9] - 2026-06-04
 
 ### Added

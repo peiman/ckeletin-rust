@@ -53,6 +53,8 @@ ckeletin-doctor:
     report cargo-nextest "cargo-nextest (just test; falls back to cargo test)" "optional: cargo install cargo-nextest --locked"
     report just "just" "required: cargo install just --locked"
     report gitleaks "gitleaks (just ckeletin-secrets, pre-commit)" "required: brew install gitleaks"
+    report cargo-cyclonedx "cargo-cyclonedx (just ckeletin-sbom)" "optional: cargo install cargo-cyclonedx --locked"
+    report grype "grype (just ckeletin-sbom-scan)" "optional: brew install grype"
     if cargo fmt --version >/dev/null 2>&1; then echo "  rustfmt component: installed"; else echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"; fi
     if cargo clippy --version >/dev/null 2>&1; then echo "  clippy component: installed"; else echo "  clippy component: NOT FOUND (rustup component add clippy)"; fi
     echo ""
@@ -84,6 +86,36 @@ ckeletin-secrets:
         exit 1
     fi
     gitleaks dir --config .ckeletin/configs/gitleaks.toml --redact --verbose
+
+# Generate a CycloneDX SBOM (sbom.cdx.json) for the CLI binary's dependency
+# graph, using cargo-cyclonedx (the official OWASP CycloneDX cargo plugin).
+# cargo-cyclonedx emits one file per workspace member next to each manifest; we
+# keep the cli crate's (the shipped app's full transitive tree) as the canonical
+# SBOM and discard the rest. Standalone — external tool, not in `just check`.
+# Install: cargo install cargo-cyclonedx --locked. Mirrors ckeletin-go's SBOM.
+ckeletin-sbom:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v cargo-cyclonedx >/dev/null 2>&1; then
+        echo "Error: cargo-cyclonedx not found. Install: cargo install cargo-cyclonedx --locked"
+        exit 1
+    fi
+    cargo cyclonedx --format json --spec-version 1.5
+    cp crates/cli/cli.cdx.json sbom.cdx.json
+    find crates .ckeletin -name '*.cdx.json' -delete
+    echo "Wrote sbom.cdx.json (CycloneDX 1.5)"
+
+# Generate the SBOM, then scan it for known vulnerabilities with grype, failing
+# on High severity or above. Install: https://github.com/anchore/grype (grype
+# downloads its vuln DB on first run, so it needs network).
+ckeletin-sbom-scan: ckeletin-sbom
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v grype >/dev/null 2>&1; then
+        echo "Error: grype not found. Install: https://github.com/anchore/grype (brew install grype)"
+        exit 1
+    fi
+    grype sbom:sbom.cdx.json --fail-on high
 
 # Check if a newer framework version is available
 ckeletin-check-update:

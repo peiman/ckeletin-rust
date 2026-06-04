@@ -6,3 +6,7 @@
 
 # Audit logs (CKSPEC-OUT-004 — written to ./logs/ by default)
 logs/
+
+# Generated SBOM artifacts (just ckeletin-sbom) — produced on demand / in CI
+*.cdx.json
+sbom.cdx.json

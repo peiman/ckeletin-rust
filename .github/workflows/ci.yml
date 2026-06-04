@@ -185,3 +185,45 @@ jobs:
 
       - name: Scan git history for secrets
         run: gitleaks git -v --redact --no-banner --config .ckeletin/configs/gitleaks.toml
+
+  sbom:
+    name: SBOM (generate + scan)
+    # Supply-chain: emit a CycloneDX SBOM for the shipped binary's dependency
+    # graph and scan it for known vulnerabilities (gates on High+). The SBOM is
+    # uploaded as a build artifact for compliance/consumers.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Pinned to match rust-toolchain.toml so the dep graph resolves identically.
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
+
+      - name: Install just
+        run: cargo install just --version 1.50.0 --locked
+
+      - name: Install grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Generate + scan SBOM (fails on High+)
+        run: just ckeletin-sbom-scan
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: warn
