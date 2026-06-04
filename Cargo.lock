@@ -174,7 +174,7 @@ version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
  "ureq",
 ]
 
