@@ -1,5 +1,28 @@
 # ckeletin Framework Changelog
 
+## [0.2.11] - 2026-06-04
+
+### Added
+- **Static analysis hardening (SAST).** Research showed dedicated SAST adds
+  little marginal value in Rust beyond clippy + cargo-deny (memory-safety
+  removes the bug classes tools like semgrep target; cargo-audit duplicates
+  cargo-deny's advisory DB). So this takes the two genuinely additive steps:
+  - **Hardened `ckeletin-clippy`** — denies a curated set of security/correctness
+    lints on top of `-D warnings`: numeric-cast safety
+    (`cast_possible_truncation`, `cast_sign_loss`, `cast_possible_wrap`,
+    `cast_precision_loss`), float pitfalls (`float_cmp`, `lossy_float_literal`),
+    and footguns (`dbg_macro`, `todo`, `unimplemented`, `mem_forget`,
+    `rc_buffer`, `verbose_file_reads`, `wildcard_dependencies`). Gates via
+    `just check` and (SSOT) the lefthook pre-commit clippy hook now calls
+    `just ckeletin-clippy` so both enforce the identical set.
+  - **`ckeletin-geiger` recipe** — reports the `unsafe` surface across the
+    dependency tree with [cargo-geiger](https://github.com/geiger-rs/cargo-geiger)
+    (`--forbid-only`). ADVISORY ONLY — an unsafe count is a metric, not a gate,
+    so it never blocks `just check`.
+  - `ckeletin-doctor` reports cargo-geiger presence.
+  Deliberately did NOT add cargo-audit (redundant with cargo-deny) or semgrep
+  (thin Rust ruleset, low marginal value).
+
 ## [0.2.10] - 2026-06-04
 
 ### Added
