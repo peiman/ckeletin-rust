@@ -1,5 +1,27 @@
 # ckeletin Framework Changelog
 
+## [0.2.8] - 2026-06-04
+
+### Added
+- **`ckeletin-doctor` recipe.** Reports the development environment — framework
+  version, pinned toolchain + MSRV (read from `rust-toolchain.toml` / `Cargo.toml`,
+  so it stays SSOT) and installed `rustc`, plus presence of the tools the
+  framework depends on (`cargo-deny`, `cargo-llvm-cov`, optional `cargo-nextest`,
+  `just`, and the rustfmt/clippy components). Informational only — always exits 0,
+  so it is intentionally not part of `just check`. Mirrors ckeletin-go's
+  `task doctor`. Smoke test: `.ckeletin/crate/tests/doctor.rs`.
+- **`ckeletin-version` recipe.** Prints the framework version (parity with
+  ckeletin-go's `task version`).
+
+### Notes
+- Remaining ckeletin-go tasks are deliberately not ported. The `validate:*`
+  ADR-enforcement suite is already achieved at compile time (trybuild violation
+  tests + `framework_purity`) and by `conform`; the `check:*`/`test:*`/`build:*`
+  variants collapse into the single `check` gateway and standard cargo; and
+  GoReleaser/`generate:config:*`/`tidy` are Go-toolchain specific. Heavier
+  capabilities (secret scanning, SAST, SBOM, fuzzing, benchmarks, `setup`) remain
+  open decisions rather than silent external-tool dependencies.
+
 ## [0.2.7] - 2026-06-04
 
 ### Added
