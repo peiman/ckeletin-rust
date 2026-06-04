@@ -79,6 +79,15 @@
       "id": "CKSPEC-ENF-007"
     },
     {
+      "id": "CKSPEC-ENF-008"
+    },
+    {
+      "id": "CKSPEC-ENF-009"
+    },
+    {
+      "id": "CKSPEC-ENF-010"
+    },
+    {
       "id": "CKSPEC-OUT-001"
     },
     {
@@ -94,6 +103,9 @@
       "id": "CKSPEC-OUT-005"
     },
     {
+      "id": "CKSPEC-OUT-006"
+    },
+    {
       "id": "CKSPEC-TEST-001"
     },
     {
@@ -106,5 +118,5 @@
       "id": "CKSPEC-TEST-004"
     }
   ],
-  "spec_version": "0.4.0"
+  "spec_version": "0.7.0"
 }

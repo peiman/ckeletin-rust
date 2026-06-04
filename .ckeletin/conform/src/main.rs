@@ -7,6 +7,7 @@ use std::process::Command;
 const REQUIREMENTS_JSON_URL: &str =
     "https://raw.githubusercontent.com/peiman/ckeletin/main/spec/requirements.json";
 const VENDORED_REQUIREMENTS: &str = "conformance/requirements.json";
+const PUBLISHED_REPORT: &str = "conformance-report.json";
 
 #[derive(Deserialize)]
 struct SpecManifest {
@@ -188,6 +189,100 @@ fn lacks_enforcement_proof(req: &RequirementMapping) -> bool {
     above_honor && !has_violation_test && !has_violation_evidence
 }
 
+/// CKSPEC-ENF-008: a `met` requirement MUST be anchored to verifiable evidence —
+/// at least one of an automated check, a violation test, or written
+/// violation_evidence. Returns true when a met claim has none (which fails the
+/// conform gate so an unanchored claim can't be published).
+fn lacks_anchor(req: &RequirementMapping) -> bool {
+    req.status == "met"
+        && req.checks.is_empty()
+        && req.violation_tests.is_empty()
+        && req
+            .violation_evidence
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+}
+
+// ── Published report (CKSPEC-ENF-010) ───────────────────────────
+// A deterministic projection of conformance-mapping.toml. Field order is
+// alphabetical (matching ckeletin-go's report) and there is NO timestamp, so the
+// committed report is byte-stable and sync-checkable; the spec-repo aggregator
+// stamps the fetch date.
+
+#[derive(Serialize)]
+struct PublishedReport {
+    implementation: String,
+    requirements: BTreeMap<String, PublishedRequirement>,
+    spec_version: String,
+    summary: PublishedSummary,
+}
+
+#[derive(Serialize)]
+struct PublishedRequirement {
+    checks: Vec<String>,
+    enforcement_level: String,
+    evidence: String,
+    status: String,
+    violation_evidence: Option<String>,
+    violation_tests: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PublishedSummary {
+    deferred: usize,
+    met: usize,
+    partial: usize,
+    /// True when no requirement is declared `partial` or `deferred` — i.e. the
+    /// mapping *claims* full conformance. This reflects declared STATUS only,
+    /// not runtime check results: the report is projected before the mapped
+    /// checks run, so `conform` itself is what gates a green tree (it exits
+    /// non-zero on a failed check or an unanchored `met`). The report is only
+    /// committed via `just conform-report`, which a maintainer runs on a tree
+    /// that already passes `just conform`. Field name mirrors ckeletin-go's
+    /// report schema.
+    passed: bool,
+    total: usize,
+}
+
+/// Project the conformance mapping into the deterministic published report.
+fn project_report(mapping: &Mapping, implementation: String) -> PublishedReport {
+    let mut requirements = BTreeMap::new();
+    let (mut met, mut partial, mut deferred) = (0usize, 0usize, 0usize);
+    for (id, r) in &mapping.requirements {
+        match r.status.as_str() {
+            "met" => met += 1,
+            "partial" => partial += 1,
+            "deferred" => deferred += 1,
+            _ => {}
+        }
+        requirements.insert(
+            id.clone(),
+            PublishedRequirement {
+                checks: r.checks.clone(),
+                enforcement_level: r.enforcement_level.clone(),
+                evidence: r.evidence.clone(),
+                status: r.status.clone(),
+                violation_evidence: r.violation_evidence.clone(),
+                violation_tests: r.violation_tests.clone(),
+            },
+        );
+    }
+    PublishedReport {
+        implementation,
+        requirements,
+        spec_version: mapping.spec_version.clone(),
+        summary: PublishedSummary {
+            deferred,
+            met,
+            partial,
+            passed: partial == 0 && deferred == 0,
+            total: mapping.requirements.len(),
+        },
+    }
+}
+
 fn main() {
     let json_mode = std::env::args().any(|a| a == "--json");
     // `--refresh` fetches the latest spec from upstream and rewrites the
@@ -195,6 +290,9 @@ fn main() {
     // hermetic: it reads only the committed vendored spec, with no network and
     // no file writes.
     let refresh = std::env::args().any(|a| a == "--refresh");
+    // `--report` (re)writes the published conformance-report.json. Without it,
+    // the committed report is sync-checked against the mapping and must match.
+    let write_report = std::env::args().any(|a| a == "--report");
 
     let mapping_content = match std::fs::read_to_string("conformance-mapping.toml") {
         Ok(c) => c,
@@ -254,6 +352,74 @@ fn main() {
             for m in &missing {
                 eprintln!("  - {m}");
             }
+        }
+        std::process::exit(1);
+    }
+
+    // ── ENF-008: Anchored conformance evidence ──────────────────
+    // Every `met` requirement must carry at least one anchor (a check, a
+    // violation test, or written violation_evidence). An unanchored met claim
+    // fails the gate so it can't be published.
+    let unanchored: Vec<&str> = mapping
+        .requirements
+        .iter()
+        .filter(|(_, r)| lacks_anchor(r))
+        .map(|(id, _)| id.as_str())
+        .collect();
+    if !unanchored.is_empty() {
+        let msg = format!(
+            "unanchored met requirements (CKSPEC-ENF-008): {}",
+            unanchored.join(", ")
+        );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "status": "error", "error": msg })
+                )
+                .unwrap()
+            );
+        } else {
+            eprintln!("FAILED — {msg}");
+            eprintln!(
+                "  Each met requirement needs a check, a violation test, or violation_evidence."
+            );
+        }
+        std::process::exit(1);
+    }
+
+    // ── ENF-010: Published report (write, or sync-check vs mapping) ──
+    let published = project_report(&mapping, detect_implementation_name());
+    let generated =
+        serde_json::to_string_pretty(&published).expect("serialize published report") + "\n";
+    if write_report {
+        if let Err(e) = std::fs::write(PUBLISHED_REPORT, &generated) {
+            eprintln!("Error: cannot write {PUBLISHED_REPORT}: {e}");
+            std::process::exit(1);
+        }
+        if !json_mode {
+            eprintln!(
+                "Wrote {PUBLISHED_REPORT} ({} requirements).",
+                mapping.requirements.len()
+            );
+        }
+        return;
+    }
+    let committed = std::fs::read_to_string(PUBLISHED_REPORT).unwrap_or_default();
+    if committed != generated {
+        let msg = format!(
+            "{PUBLISHED_REPORT} is out of sync with conformance-mapping.toml (CKSPEC-ENF-010); run `just conform-report`"
+        );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "status": "error", "error": msg })
+                )
+                .unwrap()
+            );
+        } else {
+            eprintln!("FAILED — {msg}");
         }
         std::process::exit(1);
     }
@@ -511,5 +677,115 @@ mod tests {
                 "{level} is exempt from the proof requirement"
             );
         }
+    }
+
+    // ── ENF-008: anchoring gate ─────────────────────────────────
+
+    #[test]
+    fn anchored_met_passes() {
+        let by_evidence = RequirementMapping {
+            status: "met".to_string(),
+            violation_evidence: Some("analysis-with-evidence".to_string()),
+            ..Default::default()
+        };
+        assert!(!lacks_anchor(&by_evidence));
+        let by_check = RequirementMapping {
+            status: "met".to_string(),
+            checks: vec!["test -f X".to_string()],
+            ..Default::default()
+        };
+        assert!(!lacks_anchor(&by_check));
+    }
+
+    #[test]
+    fn unanchored_met_is_rejected() {
+        let bare = RequirementMapping {
+            status: "met".to_string(),
+            ..Default::default()
+        };
+        assert!(lacks_anchor(&bare));
+        // blank/whitespace violation_evidence is not an anchor
+        let blank = RequirementMapping {
+            status: "met".to_string(),
+            violation_evidence: Some("  ".to_string()),
+            ..Default::default()
+        };
+        assert!(lacks_anchor(&blank));
+    }
+
+    #[test]
+    fn non_met_status_needs_no_anchor() {
+        let deferred = RequirementMapping {
+            status: "deferred".to_string(),
+            ..Default::default()
+        };
+        assert!(!lacks_anchor(&deferred));
+    }
+
+    // ── ENF-010: deterministic published report ─────────────────
+
+    #[test]
+    fn report_projection_is_deterministic() {
+        let mut reqs = BTreeMap::new();
+        reqs.insert(
+            "CKSPEC-ZZZ-002".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                enforcement_level: "script".to_string(),
+                checks: vec!["c".to_string()],
+                ..Default::default()
+            },
+        );
+        reqs.insert(
+            "CKSPEC-AAA-001".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                violation_evidence: Some("e".to_string()),
+                ..Default::default()
+            },
+        );
+        let m = Mapping {
+            spec_version: "9.9.9".to_string(),
+            requirements: reqs,
+        };
+        let a = serde_json::to_string_pretty(&project_report(&m, "impl".to_string())).unwrap();
+        let b = serde_json::to_string_pretty(&project_report(&m, "impl".to_string())).unwrap();
+        assert_eq!(a, b, "projection must be deterministic");
+        assert!(
+            a.find("CKSPEC-AAA-001").unwrap() < a.find("CKSPEC-ZZZ-002").unwrap(),
+            "requirement keys must be sorted"
+        );
+        assert!(
+            a.find("\"checks\"").unwrap() < a.find("\"status\"").unwrap(),
+            "per-requirement fields must be alphabetical"
+        );
+        assert!(
+            !a.contains("report_date"),
+            "the published report must carry no timestamp"
+        );
+    }
+
+    #[test]
+    fn sync_check_detects_drift() {
+        let mut reqs = BTreeMap::new();
+        reqs.insert(
+            "X".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                violation_evidence: Some("e".to_string()),
+                ..Default::default()
+            },
+        );
+        let m = Mapping {
+            spec_version: "1.0.0".to_string(),
+            requirements: reqs,
+        };
+        let generated =
+            serde_json::to_string_pretty(&project_report(&m, "impl".to_string())).unwrap();
+        let drifted = generated.replace("\"met\"", "\"partial\"");
+        assert_ne!(
+            generated, drifted,
+            "a drifted committed report must differ from the regenerated one"
+        );
     }
 }

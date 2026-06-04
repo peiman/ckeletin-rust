@@ -1,5 +1,34 @@
 # ckeletin Framework Changelog
 
+## [0.2.6] - 2026-06-04
+
+### Added
+- **Anchored conformance evidence (CKSPEC-ENF-008).** `just conform` now
+  exits non-zero on any `met` requirement that has no automated check, no
+  violation test, and no written `violation_evidence` — an unbacked "met"
+  can no longer pass the gate or reach the published report. The gate
+  (`lacks_anchor`) runs after the completeness check; unit tests
+  `anchored_met_passes` / `unanchored_met_is_rejected` prove it.
+- **Published machine-readable conformance report (CKSPEC-ENF-010).** The
+  generator projects `conformance-mapping.toml` into a deterministic
+  `conformance-report.json` at the repo root — sorted requirement keys,
+  alphabetical fields, **no timestamp** — so it is byte-stable and a spec
+  repo can aggregate it instead of hand-authoring (the aggregator stamps
+  the fetch date). `just conform` regenerates it in memory and **fails on
+  drift** (sync-check); `just conform-report` rewrites it. Schema mirrors
+  ckeletin-go's report (`implementation`, `requirements`, `spec_version`,
+  `summary`). Unit tests `report_projection_is_deterministic` /
+  `sync_check_detects_drift`.
+- `conform-report` recipe in `.ckeletin/Justfile` — regenerate the
+  published report after editing the mapping.
+
+### Notes
+- CKSPEC-ENF-009 (conformance gate on release) is wired at the project
+  level, not the framework level: a tag-triggered `release.yml` gates its
+  publish job on the `conform` job, and a scheduled `spec-drift.yml`
+  watches the live upstream spec. These ship as worked examples adopters
+  keep or replace, like `ci.yml`.
+
 ## [0.2.5] - 2026-06-03
 
 ### Added

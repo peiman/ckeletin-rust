@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.4.0"
+spec_version = "0.7.0"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
@@ -93,6 +93,7 @@ enforcement_level = "design"
 evidence = "6 compile-time, 5 pre-commit/CI, 3 honor-system. See enforcement audit table."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: the ladder (compile-time > linter > script > CI > honor) is realized across the repo and documented in CONFORMANCE.md's enforcement audit table (which mechanism enforces which rule). Whether the strongest feasible mechanism was chosen per rule is a design judgment, not a runtime check. Artifact: CONFORMANCE.md 'Enforcement Audit Table'."
 
 [requirements.CKSPEC-ENF-003]
 title = "Document enforcement gaps"
@@ -101,6 +102,7 @@ enforcement_level = "design"
 evidence = "CONFORMANCE.md enforcement audit table documents all gaps."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: CONFORMANCE.md's audit table + the documented ENF-007 feedback signals enumerate every honor-system/partial gap and why. Whether a gap was *omitted* cannot be machine-checked (you'd need to know the gap exists), so completeness is review-verified. Artifact: CONFORMANCE.md."
 
 [requirements.CKSPEC-ENF-004]
 title = "Enforcement audit table"
@@ -109,6 +111,7 @@ enforcement_level = "design"
 evidence = "CONFORMANCE.md contains enforcement audit table."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: CONFORMANCE.md maintains the living audit table (decision -> mechanism -> level -> status -> gap), reconciled with conformance-mapping.toml. Table completeness is a review judgment no check can make. Artifact: CONFORMANCE.md 'Enforcement Audit Table' section."
 
 [requirements.CKSPEC-ENF-005]
 title = "Conformance mapping completeness"
@@ -137,6 +140,33 @@ checks = []
 violation_tests = []
 violation_evidence = "The feedback vector and ENF-007 summary in .ckeletin/conform/src/main.rs produce the signals; the CI conform job surfaces them on every run."
 
+[requirements.CKSPEC-ENF-008]
+title = "Anchored conformance evidence"
+status = "met"
+enforcement_level = "script"
+evidence = "`just conform` FAILS (exit non-zero) on any `met` requirement that has neither an automated check / violation test NOR written violation_evidence — an unanchored `met` cannot pass the gate."
+checks = ["cargo test -p ckeletin-conform"]
+violation_tests = []
+violation_evidence = "Unit tests anchored_met_passes / unanchored_met_is_rejected in .ckeletin/conform/src/main.rs prove an unanchored `met` is flagged; the anchoring gate runs in the CI conform job."
+
+[requirements.CKSPEC-ENF-009]
+title = "Conformance gate on release"
+status = "met"
+enforcement_level = "ci"
+evidence = "The tag-triggered release workflow (.github/workflows/release.yml) gates its publish step on the conform job (`needs: conform`), so no release proceeds while conformance fails. A scheduled spec-drift job continuously checks the live spec_version against the vendored one and opens an issue when upstream advances — the 'verify against latest' half, since conform is deliberately hermetic (a documented divergence from ckeletin-go's live-fetch)."
+checks = []
+violation_tests = []
+violation_evidence = ".github/workflows/release.yml gates release on the conform job; .github/workflows/ci.yml runs `just conform`; the spec-drift detector job surfaces upstream advances so drift is caught between releases."
+
+[requirements.CKSPEC-ENF-010]
+title = "Published machine-readable conformance report"
+status = "met"
+enforcement_level = "script"
+evidence = "A deterministic conformance-report.json (sorted keys, no timestamp) is published at the repo root, projected from conformance-mapping.toml. `just conform` regenerates it in-memory and FAILS if the committed report drifted from the mapping (sync-check). The spec repo aggregates this report instead of hand-authoring."
+checks = ["cargo test -p ckeletin-conform"]
+violation_tests = []
+violation_evidence = "Unit tests report_projection_is_deterministic / sync_check_detects_drift in .ckeletin/conform/src/main.rs prove the report is a stable projection and that drift fails the gate; conformance-report.json is the published artifact."
+
 # ═══════════════════════════════════════════════════════════════
 # Testing (CKSPEC-TEST-001 through CKSPEC-TEST-004)
 # ═══════════════════════════════════════════════════════════════
@@ -148,6 +178,7 @@ enforcement_level = "honor-system"
 evidence = "TDD enforced via AGENTS.md and CLAUDE.md. Cannot automate intent."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: TDD is an intent no check can verify post-hoc (a test written after code is indistinguishable from one written before). Mandated in AGENTS.md + CLAUDE.md; git history shows tests committed atomically with implementation. Artifact: AGENTS.md 'Testing'/'Workflow' + git history."
 
 [requirements.CKSPEC-TEST-002]
 title = "Minimum coverage threshold"
@@ -163,8 +194,9 @@ title = "Dependency injection over mocking"
 status = "met"
 enforcement_level = "design"
 evidence = "Writer injection in Output. No mock frameworks in Cargo.lock."
-checks = []
+checks = ["! grep -qiE '(mockall|mockito|wiremock|double)' Cargo.lock"]
 violation_tests = []
+violation_evidence = "The check fails if a mock-framework crate enters Cargo.lock; the writer-injection pattern (Output takes &mut dyn Write) is the DI mechanism in .ckeletin/crate/src/output.rs."
 
 [requirements.CKSPEC-TEST-004]
 title = "Atomic test commits"
@@ -173,6 +205,7 @@ enforcement_level = "honor-system"
 evidence = "Enforced via AGENTS.md and CLAUDE.md. Cannot automate grouping."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: test+impl commit grouping is an intent no check can verify after the fact. Mandated in AGENTS.md + CLAUDE.md; git history shows atomic test+implementation commits. Artifact: AGENTS.md + git history."
 
 # ═══════════════════════════════════════════════════════════════
 # Output (CKSPEC-OUT-001 through CKSPEC-OUT-005)
@@ -222,6 +255,15 @@ evidence = "Domain crate has no std::io path. Cannot write to stdout."
 checks = ["cargo check --workspace"]
 violation_tests = ["crates/domain/tests/violations/domain_imports_infrastructure.rs"]
 
+[requirements.CKSPEC-OUT-006]
+title = "Build identity in version output"
+status = "met"
+enforcement_level = "script"
+evidence = "The `version` command and `--version` surface semver (CARGO_PKG_VERSION), source commit, build date, and a dirty flag via infrastructure::build_info::BuildInfo; each field degrades to an explicit \"unknown\" (option_env!) rather than being omitted or fabricated."
+checks = ["cargo test -p cli --test cli"]
+violation_tests = []
+violation_evidence = "Integration test version_command_json_has_fields in crates/cli/tests/cli.rs asserts version/commit/date/dirty are all present; build_info + version.rs unit tests cover the unknown-degradation and the dirty-suffix parse."
+
 # ═══════════════════════════════════════════════════════════════
 # Agent Readiness (CKSPEC-AGENT-001 through CKSPEC-AGENT-005)
 # ═══════════════════════════════════════════════════════════════
@@ -242,6 +284,7 @@ enforcement_level = "honor-system"
 evidence = "AGENTS.md reviewed — no provider-specific content."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: AGENTS.md carries no Claude/Gemini/Copilot-specific instructions (provider rules live in CLAUDE.md). A grep can't distinguish a provider *reference* (e.g. 'see CLAUDE.md') from a provider *instruction*, so the absence is verified at review. Artifact: AGENTS.md."
 
 [requirements.CKSPEC-AGENT-003]
 title = "Provider-specific guides follow provider guidance"
@@ -259,6 +302,7 @@ enforcement_level = "honor-system"
 evidence = "AGENTS.md covers: purpose, architecture, commands, conventions, testing, troubleshooting."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: AGENTS.md covers purpose, architecture, commands, conventions, testing, and troubleshooting. 'Sufficient for common tasks without other docs' is a sufficiency judgment a check can't make; verified at review. Artifact: AGENTS.md section structure."
 
 [requirements.CKSPEC-AGENT-005]
 title = "CLI as the agent interface"
@@ -289,30 +333,34 @@ enforcement_level = "honor-system"
 evidence = "CHANGELOG.md follows Keep a Changelog format."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: CHANGELOG.md uses Keep a Changelog categories (Added/Changed/Deprecated/Removed/Fixed/Security), reverse-chronological order, and version+date headings. Strict format conformance is review-verified — no structural linter is wired. Artifact: CHANGELOG.md."
 
 [requirements.CKSPEC-CL-003]
 title = "ISO 8601 dates"
 status = "met"
 enforcement_level = "honor-system"
 evidence = "All dates use YYYY-MM-DD format."
-checks = []
+checks = ["grep -qE ' - [0-9]{4}-[0-9]{2}-[0-9]{2}' CHANGELOG.md"]
 violation_tests = []
+violation_evidence = "The check requires an ISO-8601 (YYYY-MM-DD) dated version heading in CHANGELOG.md; a regional date format would not match."
 
 [requirements.CKSPEC-CL-004]
 title = "Semantic Versioning"
 status = "met"
 enforcement_level = "design"
 evidence = "Cargo.toml version field. CHANGELOG states SemVer adherence."
-checks = []
+checks = ["grep -qi 'semantic versioning' CHANGELOG.md"]
 violation_tests = []
+violation_evidence = "The check requires the SemVer-adherence statement in CHANGELOG.md; the version lives in Cargo.toml (workspace.package.version)."
 
 [requirements.CKSPEC-CL-005]
 title = "Unreleased section"
 status = "met"
 enforcement_level = "honor-system"
 evidence = "[Unreleased] section at top of CHANGELOG.md."
-checks = []
+checks = ["grep -qF '[Unreleased]' CHANGELOG.md"]
 violation_tests = []
+violation_evidence = "The check fails if the [Unreleased] section is removed from CHANGELOG.md."
 
 [requirements.CKSPEC-CL-006]
 title = "Human-curated, not auto-generated"
@@ -321,11 +369,13 @@ enforcement_level = "honor-system"
 evidence = "Changelog entries hand-written."
 checks = []
 violation_tests = []
+violation_evidence = "Analysis: entries are hand-written prose describing features (not a git-log dump) — an editorial property no check can confirm. Artifact: CHANGELOG.md entries."
 
 [requirements.CKSPEC-CL-007]
 title = "Version comparison links"
 status = "met"
 enforcement_level = "honor-system"
 evidence = "Reference-style links at bottom of CHANGELOG.md."
-checks = []
+checks = ["grep -qE 'compare/v' CHANGELOG.md"]
 violation_tests = []
+violation_evidence = "The check requires a reference-style version-comparison link (…/compare/v…) in CHANGELOG.md."

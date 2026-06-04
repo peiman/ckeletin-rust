@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Conformance brought up to ckeletin spec **v0.7.0** (39 requirements,
+  all met), adopting the published-report aggregation model. The ENF-008
+  anchoring gate and ENF-010 report machinery are framework-owned, so the
+  framework version bumped to 0.2.6. Four new requirements implemented:
+  - **CKSPEC-OUT-006** (build identity): `version` and `--version`
+    already surfaced version/commit/date/dirty via `build_info`; now
+    anchored by the `version_command_json_has_fields` integration test.
+  - **CKSPEC-ENF-008** (anchored evidence): `just conform` now exits
+    non-zero on any `met` requirement lacking a check, violation test, or
+    written `violation_evidence` — an unbacked "met" can't be published.
+    Unit tests `anchored_met_passes` / `unanchored_met_is_rejected`.
+  - **CKSPEC-ENF-009** (release gate): a tag-triggered
+    `.github/workflows/release.yml` gates its `publish` job on the
+    `conform` job (`needs:`), so no release cuts while non-conformant. A
+    scheduled `.github/workflows/spec-drift.yml` compares the live
+    upstream `spec_version` to the vendored snapshot and opens a tracking
+    issue on drift — the "verify against latest" half, since `conform` is
+    deliberately hermetic (a documented divergence from ckeletin-go's
+    live-fetch).
+  - **CKSPEC-ENF-010** (published report): a deterministic
+    `conformance-report.json` (sorted keys, alphabetical fields, no
+    timestamp) is published at the repo root, projected from
+    `conformance-mapping.toml`. `just conform` regenerates it in memory
+    and fails on drift (sync-check); `just conform-report` rewrites it.
+    Schema mirrors ckeletin-go's report so the spec repo can aggregate
+    it. Unit tests `report_projection_is_deterministic` /
+    `sync_check_detects_drift`.
 - `Output::message(command, msg, writer)` — framework helper for
   no-structured-data success paths (e.g. "no recorded history
   yet"). Human mode writes the sentence + newline; JSON mode wraps
