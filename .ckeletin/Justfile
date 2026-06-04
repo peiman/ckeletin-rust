@@ -52,6 +52,7 @@ ckeletin-doctor:
     report cargo-llvm-cov "cargo-llvm-cov (just coverage)" "required: cargo install cargo-llvm-cov --locked"
     report cargo-nextest "cargo-nextest (just test; falls back to cargo test)" "optional: cargo install cargo-nextest --locked"
     report just "just" "required: cargo install just --locked"
+    report gitleaks "gitleaks (just ckeletin-secrets, pre-commit)" "required: brew install gitleaks"
     if cargo fmt --version >/dev/null 2>&1; then echo "  rustfmt component: installed"; else echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"; fi
     if cargo clippy --version >/dev/null 2>&1; then echo "  clippy component: installed"; else echo "  clippy component: NOT FOUND (rustup component add clippy)"; fi
     echo ""
@@ -68,6 +69,21 @@ ckeletin-deny:
     cargo deny check
 
 ckeletin-check: ckeletin-fmt-check ckeletin-clippy ckeletin-deny
+
+# Scan the working tree for hardcoded secrets with gitleaks (CKSPEC-ENF-001).
+# Standalone — NOT part of `just check`, because gitleaks is an external,
+# non-cargo binary; it gates via the secret-scan CI job and the lefthook
+# pre-commit hook instead, so a missing gitleaks never blocks `just check`.
+# Install: brew install gitleaks (or https://github.com/gitleaks/gitleaks).
+# Mirrors ckeletin-go's secret scanning.
+ckeletin-secrets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v gitleaks >/dev/null 2>&1; then
+        echo "Error: gitleaks not found. Install: brew install gitleaks (https://github.com/gitleaks/gitleaks)"
+        exit 1
+    fi
+    gitleaks dir --config .ckeletin/configs/gitleaks.toml --redact --verbose
 
 # Check if a newer framework version is available
 ckeletin-check-update:
