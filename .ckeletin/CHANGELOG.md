@@ -1,5 +1,20 @@
 # ckeletin Framework Changelog
 
+## [0.2.15] - 2026-06-05
+
+### Fixed
+- **`conform` recipes no longer error in consumer repos.** `conform` /
+  `conform-refresh` / `conform-report` validate ckeletin-rust against its own
+  spec and are **upstream-only** — but the recipes propagate via `.ckeletin/`,
+  and a consumer has no `conformance/requirements.json` (it's project-owned, only
+  in the framework repo). So `just conform` failed with "cannot read vendored
+  spec" on every downstream repo (found while updating the triz consumer
+  v0.2.2→v0.2.14). The recipes now detect a consumer — the upstream `repository`
+  slug is absent from the root `Cargo.toml` once `just init` rewrites it, the
+  same signal the `ckeletin-update` self-guard uses — and **no-op with an
+  explanation (exit 0)** instead of erroring. Regression test:
+  `.ckeletin/crate/tests/conform_guard.rs`.
+
 ## [0.2.14] - 2026-06-05
 
 ### Added (agent-drivable: hardening for autonomous maintenance)
