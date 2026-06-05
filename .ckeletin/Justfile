@@ -342,14 +342,33 @@ ckeletin-update-check-compatibility version="main":
         exit 1
     fi
 
+# conform validates ckeletin-rust against its OWN spec; it is upstream-only. The
+# recipes propagate to consumers, but a consumer has no spec (conformance/ is
+# project-owned, only in the framework repo), so in a consumer they no-op with an
+# explanation instead of erroring on the missing spec. Detection mirrors the
+# ckeletin-update self-guard: the upstream slug is absent once `just init`
+# rewrites it.
+
 # Run conformance generator (hermetic: reads the committed vendored spec, no network)
 conform *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
+        echo "conform is an upstream-only ckeletin-rust maintainer tool (it validates the framework against its spec). This is a consumer repo — nothing to conform."
+        exit 0
+    fi
     cargo run -p ckeletin-conform -q -- {{ARGS}}
 
 # Refresh the vendored spec snapshot from upstream (maintainer action). Fetches
 # the latest requirements.json, rewrites conformance/requirements.json — then
 # review the diff and reconcile conformance-mapping.toml + the spec_version.
 conform-refresh:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
+        echo "conform-refresh is an upstream-only ckeletin-rust maintainer tool. This is a consumer repo — nothing to refresh."
+        exit 0
+    fi
     cargo run -p ckeletin-conform -q -- --refresh
 
 # Regenerate the published conformance report (CKSPEC-ENF-010). The committed
@@ -357,4 +376,10 @@ conform-refresh:
 # fetches; `just conform` fails if it drifts from conformance-mapping.toml, so
 # run this after editing the mapping and commit the result.
 conform-report:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
+        echo "conform-report is an upstream-only ckeletin-rust maintainer tool. This is a consumer repo — nothing to report."
+        exit 0
+    fi
     cargo run -p ckeletin-conform -q -- --report
