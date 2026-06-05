@@ -267,3 +267,51 @@ fn json_mode_suppresses_the_audit_notice() {
         .success()
         .stderr(predicate::str::is_empty());
 }
+
+// --- catalog command (CKSPEC-AGENT-006: machine-readable command catalog) ---
+
+#[test]
+fn catalog_json_is_a_success_envelope() {
+    cmd()
+        .args(["--output", "json", "catalog"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"status\": \"success\""))
+        .stdout(predicate::str::contains("\"command\": \"catalog\""));
+}
+
+#[test]
+fn catalog_json_lists_every_subcommand() {
+    // The catalog is derived from the same clap tree the parser uses, so it
+    // must contain every subcommand — including itself (self-referential).
+    cmd()
+        .args(["--output", "json", "catalog"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"ping\""))
+        .stdout(predicate::str::contains("\"name\": \"version\""))
+        .stdout(predicate::str::contains("\"name\": \"catalog\""));
+}
+
+#[test]
+fn catalog_json_reports_global_flags_with_takes_value() {
+    // Required-core schema: global flags listed once at top level, each with a
+    // normalized takes_value bool. --output takes a value; --verbose does not.
+    cmd()
+        .args(["--output", "json", "catalog"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"global_flags\""))
+        .stdout(predicate::str::contains("\"long\": \"output\""))
+        .stdout(predicate::str::contains("\"long\": \"verbose\""));
+}
+
+#[test]
+fn catalog_human_mode_renders_a_readable_tree() {
+    cmd()
+        .arg("catalog")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Commands:"))
+        .stdout(predicate::str::contains("ping"));
+}

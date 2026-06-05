@@ -1,6 +1,7 @@
 //! Entry point — bootstrap only (CKSPEC-ARCH-006).
 //! All logic lives in domain and infrastructure crates.
 
+mod catalog;
 mod ping;
 mod root;
 mod version;
@@ -72,6 +73,7 @@ fn subcommand_name(command: &root::Commands) -> &'static str {
     match command {
         root::Commands::Ping => "ping",
         root::Commands::Version => "version",
+        root::Commands::Catalog => "catalog",
     }
 }
 
@@ -140,6 +142,7 @@ fn run_inner(cli: root::Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         root::Commands::Ping => ping::execute(&output)?,
         root::Commands::Version => version::execute(&output)?,
+        root::Commands::Catalog => catalog::execute(&output)?,
     }
 
     Ok(())

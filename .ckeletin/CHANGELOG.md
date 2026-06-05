@@ -1,6 +1,25 @@
 # ckeletin Framework Changelog
 
-## [0.2.15] - 2026-06-05
+## [0.2.16] - 2026-06-05
+
+### Added
+- **Machine-readable command catalog (`catalog` command) — CKSPEC-AGENT-006.**
+  The CLI now self-reports its own command surface as structured data: a
+  `catalog` command emits, through the OUT-002 envelope, an enumeration of every
+  command, subcommand, and flag — derived from the **same clap tree the parser
+  uses** (`Cli::command()`), so it cannot drift from the actual command set.
+  - `ckeletin::catalog` (framework crate, re-exported via `infrastructure`):
+    the `Catalog` / `CatalogCommand` / `CatalogFlag` types — the cross-impl
+    schema agreed with ckeletin-go (required core `long`/`required`/`takes_value`
+    per flag, `global_flags` once at top level, recursive `commands`; optional
+    `short`/`description`/`default`/`possible_values` where clap derives them).
+    Defining the schema as a shared framework type means a derived project
+    cannot emit a wrong-shaped catalog.
+  - `crates/cli/src/catalog.rs` (worked example, like `ping`/`version`): the
+    clap → `Catalog` walk (clap is cli-only by architecture).
+  Closes the rust side of spec issue #9 (both agents endorsed SHOULD@v0.8.0).
+  Spec text + conformance mapping land separately (the spec gets updated with a
+  proven implementation, per the two-impl gate).
 
 ### Fixed
 - **`conform` recipes no longer error in consumer repos.** `conform` /
