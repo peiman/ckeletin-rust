@@ -39,4 +39,6 @@ pub enum Commands {
     Ping,
     /// Print the binary's build identity (version, commit, date, dirty)
     Version,
+    /// Emit the machine-readable command catalog (CKSPEC-AGENT-006)
+    Catalog,
 }
