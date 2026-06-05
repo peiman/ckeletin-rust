@@ -1,5 +1,29 @@
 # ckeletin Framework Changelog
 
+## [0.2.14] - 2026-06-05
+
+### Added (agent-drivable: hardening for autonomous maintenance)
+The framework's update/diagnostic surface now speaks machine, so an autonomous
+orchestrator can drive it without human-shaped prose, prompts, or guesswork.
+- **`ckeletin-check-update json`** — emits `{"current","latest","update_available"}`
+  (or `{"error":"no_upstream_remote",…}`). The trigger signal for a maintenance
+  loop: poll, branch on `update_available`.
+- **`ckeletin-doctor json`** — emits a single object: `framework_version`,
+  `toolchain` (pinned/msrv/rustc), and `tools` as booleans. Machine preflight
+  for "is this environment ready". Regression test in `doctor.rs`.
+- **`ckeletin-update` structured verdict** — prints a final
+  `CKELETIN_UPDATE_RESULT={…}` line on every exit path with
+  `status` (`updated` / `compile_failed` / `check_failed`), `from`, `to`,
+  `committed`, `rolled_back` — so a driver can decide rollback / fix / escalate
+  without parsing prose.
+- **Non-interactive `just init`** — honours `CKELETIN_ASSUME_YES=1` to skip the
+  uncommitted-changes prompt for agent/CI use. In a non-interactive shell
+  WITHOUT that var it now refuses (exit 1) rather than blocking on a prompt or
+  silently discarding work.
+
+All text/human output is unchanged (these are additive `format` params / env
+opt-ins), so existing usage is unaffected.
+
 ## [0.2.13] - 2026-06-04
 
 ### Fixed

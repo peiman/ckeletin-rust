@@ -29,22 +29,30 @@ ckeletin-version:
 # Report the development environment: framework version, toolchain, and the tools
 # the framework depends on. Informational only — always exits 0 (it reports
 # status, it does not gate the build), so it is intentionally not in `just check`.
-# Mirrors ckeletin-go's `task doctor`.
-ckeletin-doctor:
+# Mirrors ckeletin-go's `task doctor`. Pass `json` for a machine-readable object
+# an autonomous agent can parse (`just ckeletin-doctor json`).
+ckeletin-doctor format="text":
     #!/usr/bin/env bash
     set -uo pipefail
+    EXPECTED=$(grep -E '^channel' rust-toolchain.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
+    MSRV=$(grep -E '^rust-version' Cargo.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
+    RUSTC=$(command -v rustc >/dev/null 2>&1 && rustc --version | awk '{print $2}' || echo "")
+    if [ "{{format}}" = "json" ]; then
+        present() { command -v "$1" >/dev/null 2>&1 && printf true || printf false; }
+        printf '{"framework_version":"%s","toolchain":{"pinned":"%s","msrv":"%s","rustc":"%s"},"tools":{' \
+            "{{ckeletin_version}}" "${EXPECTED:-}" "${MSRV:-}" "${RUSTC:-}"
+        printf '"cargo-deny":%s,"cargo-llvm-cov":%s,"cargo-nextest":%s,"just":%s,"gitleaks":%s,' \
+            "$(present cargo-deny)" "$(present cargo-llvm-cov)" "$(present cargo-nextest)" "$(present just)" "$(present gitleaks)"
+        printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s}}\n' \
+            "$(present cargo-cyclonedx)" "$(present grype)" "$(present cargo-geiger)" "$(present cargo-bolero)"
+        exit 0
+    fi
     echo "ckeletin framework v{{ckeletin_version}}"
     echo ""
     echo "Toolchain:"
-    EXPECTED=$(grep -E '^channel' rust-toolchain.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
-    MSRV=$(grep -E '^rust-version' Cargo.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
     echo "  Pinned (rust-toolchain.toml): ${EXPECTED:-unknown}"
     echo "  MSRV (Cargo.toml):            ${MSRV:-unknown}"
-    if command -v rustc >/dev/null 2>&1; then
-        echo "  Installed rustc:              $(rustc --version | awk '{print $2}')"
-    else
-        echo "  Installed rustc:              NOT FOUND (install via https://rustup.rs)"
-    fi
+    echo "  Installed rustc:              ${RUSTC:-NOT FOUND (install via https://rustup.rs)}"
     echo ""
     echo "Tools:"
     report() { if command -v "$1" >/dev/null 2>&1; then echo "  $2: installed"; else echo "  $2: NOT FOUND ($3)"; fi; }
@@ -172,17 +180,28 @@ ckeletin-geiger:
 ckeletin-fuzz:
     cargo test --workspace --test fuzz_ping
 
-# Check if a newer framework version is available
-ckeletin-check-update:
+# Check if a newer framework version is available. Pass `json` for a
+# machine-readable verdict ({"current","latest","update_available"}) — the
+# trigger signal for an autonomous maintenance loop.
+ckeletin-check-update format="text":
     #!/usr/bin/env bash
     set -euo pipefail
     if ! git remote | grep -q ckeletin-upstream; then
-        echo "No upstream remote. Run: git remote add ckeletin-upstream {{ckeletin_upstream_url}}"
+        if [ "{{format}}" = "json" ]; then
+            printf '{"error":"no_upstream_remote","hint":"git remote add ckeletin-upstream %s"}\n' "{{ckeletin_upstream_url}}"
+        else
+            echo "No upstream remote. Run: git remote add ckeletin-upstream {{ckeletin_upstream_url}}"
+        fi
         exit 0
     fi
     git fetch ckeletin-upstream -q
     LOCAL=$(cat .ckeletin/VERSION)
     REMOTE=$(git show ckeletin-upstream/main:.ckeletin/VERSION 2>/dev/null || echo "unknown")
+    if [ "{{format}}" = "json" ]; then
+        AVAIL=true; [ "$LOCAL" = "$REMOTE" ] && AVAIL=false
+        printf '{"current":"%s","latest":"%s","update_available":%s}\n' "$LOCAL" "$REMOTE" "$AVAIL"
+        exit 0
+    fi
     if [ "$LOCAL" = "$REMOTE" ]; then
         echo "Framework is up to date (v$LOCAL)"
     else
@@ -216,6 +235,7 @@ ckeletin-update version="main":
         echo "Error: workspace does not compile after update. Rolling back."
         git checkout HEAD -- .ckeletin/
         cargo generate-lockfile
+        printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true}\n' "$OLD_VERSION" "$NEW_VERSION"
         exit 1
     fi
     # Tier 2: must pass the SAME gate the project runs — `just check` (clippy
@@ -231,6 +251,7 @@ ckeletin-update version="main":
         echo "above (real fix, or a reasoned #[allow]), then commit:"
         echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
+        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false}\n' "$OLD_VERSION" "$NEW_VERSION"
         exit 1
     fi
     echo ""
@@ -239,6 +260,8 @@ ckeletin-update version="main":
     git diff HEAD -- .ckeletin/CHANGELOG.md || true
     git add .ckeletin/ Cargo.lock
     git commit -m "chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION"
+    # Final machine-readable verdict for an autonomous driver (workhorse).
+    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":true,"rolled_back":false}\n' "$OLD_VERSION" "$NEW_VERSION"
 
 # Preview update without applying
 ckeletin-update-dry-run version="main":

@@ -9,13 +9,24 @@ if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
     exit 1
 fi
 
-# Pre-flight: warn about uncommitted changes
+# Pre-flight: warn about uncommitted changes. Automatable: set
+# CKELETIN_ASSUME_YES=1 to proceed without a prompt (for agent/CI use). In a
+# non-interactive shell without that var we REFUSE rather than silently discard
+# uncommitted work.
 if [ -d .git ] && ! git diff --quiet 2>/dev/null; then
     echo "Warning: uncommitted changes exist. Init resets git history — uncommitted work will be lost."
-    read -p "Continue? (y/N) " confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        echo "Aborted."
-        exit 0
+    if [ "${CKELETIN_ASSUME_YES:-}" = "1" ]; then
+        echo "CKELETIN_ASSUME_YES=1 — proceeding without prompt."
+    elif [ -t 0 ]; then
+        read -p "Continue? (y/N) " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+    else
+        echo "Error: non-interactive shell and CKELETIN_ASSUME_YES is not set —" \
+             "refusing to discard uncommitted changes. Set CKELETIN_ASSUME_YES=1 to proceed."
+        exit 1
     fi
 fi
 
