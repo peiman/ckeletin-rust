@@ -16,6 +16,9 @@
       "id": "CKSPEC-AGENT-005"
     },
     {
+      "id": "CKSPEC-AGENT-006"
+    },
+    {
       "id": "CKSPEC-ARCH-001"
     },
     {
@@ -118,5 +121,5 @@
       "id": "CKSPEC-TEST-004"
     }
   ],
-  "spec_version": "0.7.0"
+  "spec_version": "0.8.0"
 }
