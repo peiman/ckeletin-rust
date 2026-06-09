@@ -22,6 +22,7 @@ multiple-versions = "warn"
 wildcards = "allow"
 
 [advisories]
+yanked = "deny"
 ignore = []
 
 [sources]
