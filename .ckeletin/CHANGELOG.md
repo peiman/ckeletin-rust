@@ -1,5 +1,70 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Added
+- **Dependency allowlist invariant tests** (`.ckeletin/crate/tests/arch_allowlist.rs`):
+  domain `[dependencies]` == `{serde}`, infrastructure == `{ckeletin}`, and
+  `.ckeletin/crate` must not contain CLI framework deps (clap etc.). Adding any
+  new dep requires a conscious update to the allowlist constants. (Wave 2 / Finding #7)
+- **Violation test drift guard** (`.ckeletin/crate/tests/violation_drift_guard.rs`):
+  asserts every vendored `.ckeletin/tests/violations/*.rs` is byte-identical to its
+  active project copy under `crates/*/tests/violations/`. Divergence fails CI loudly.
+  Vendored = canonical (propagates to consumers); project = active (trybuild runs it).
+  (Wave 2 / Finding #8)
+- **`print_stdout = "deny"` + `print_stderr = "deny"` clippy lints** added to
+  `[lints.clippy]` in the framework crate (`.ckeletin/crate/Cargo.toml`). Framework
+  library code must not write to stdout/stderr; all output goes through the `Output`
+  struct. Test files that emit skip signals via `eprintln!` carry per-file
+  `#![allow(clippy::print_stderr)]` with justification. (Wave 2 / Finding #3)
+- **CONFORMANCE.md header sync gate** in the conform generator: `just conform` now
+  parses CONFORMANCE.md's stated spec version and requirement count and fails hard
+  when they disagree with the mapping — so a spec bump that updates the mapping but
+  not the prose is caught immediately. (Wave 2 / Finding #6b)
+- **Bidirectional ENF-005 completeness check**: conform now also fails on mapping
+  entries whose requirement ID is not in the spec (stale/invented IDs that inflate
+  totals). (Wave 2 / Finding #9)
+- **Dangling evidence anchor validation**: conform fails when any evidence string
+  that looks like a file path (contains `/`, ends in `.rs`/`.toml` etc.) refers to
+  a non-existent file, or when a `file.rs::symbol` anchor's symbol is absent from the
+  file. (Wave 2 / Finding #1)
+- **Check failure output surfaced**: failing conform checks now print the combined
+  stdout+stderr of the failed command inline so failures are self-diagnosing without
+  re-running manually. (Wave 2 / Finding #10)
+- **JSON error objects for spec-load failures**: `--json` mode now emits a structured
+  `{"status":"error","error":"..."}` object for spec-load and mapping-parse failures
+  instead of plain human text. (Wave 2 / Finding #10)
+- **Tag/version reconciliation gate** in `.github/workflows/release.yml`: asserts
+  the pushed tag (`vX.Y.Z`) equals the cli package's `CARGO_PKG_VERSION` before
+  releasing. Prevents the historical incident where `v0.2.0` was cut from package
+  version `0.1.0`. (Wave 2 / Finding #12)
+- **Full requirement metadata in vendored spec snapshot**: `conformance/requirements.json`
+  now preserves `title`, `level`, `checkable`, `domain`, and `since` fields from the
+  upstream spec (not just `id`). Refreshed from local spec repo at v0.8.0.
+  (Wave 2 / Finding #11)
+
+### Fixed
+- **`date` command failure no longer panics** the conform generator. `current_date()`
+  now degrades to `"unknown"` instead of `expect`-panicking. (Wave 2 / Finding #10)
+- **OUT-005 enforcement level corrected**: mapping changed from `compile-time` to
+  `linter` — the previous claim was false (domain CAN write to stdout without the
+  clippy lints; the lint boundary is now real). (Wave 2 / Finding #3)
+- **ARCH-006 enforcement level corrected**: mapping changed from `compile-time` to
+  `design` — entry-point minimality is structural/review-enforced, not
+  compiler-enforced. (Wave 2 / Finding #4)
+- **ENF-005 evidence text corrected**: was "live, with vendored fallback" (describing
+  ckeletin-go's behavior); now accurately describes the hermetic-by-default
+  (`--refresh` for deliberate update) behavior. (Wave 2 / Finding #5)
+- **OUT-004 stale anchor fixed**: removed citation of `audit_log_written_by_default`
+  (test renamed); replaced with `audit_log_written_under_config_home_by_default`,
+  `no_audit_flag_disables_the_log_file`, and `audit_log_content_contains_output_success_event_and_data`.
+  (Wave 2 / Finding #2)
+- **ARCH-003 anchor corrected**: `cli/Cargo.toml` → `crates/cli/Cargo.toml`.
+  (Wave 2 / anchor cleanup)
+- **CONFORMANCE.md updated** from spec v0.7.0/39 requirements to v0.8.0/40 requirements.
+  Brittle prose counts (e.g. "main.rs is 102 lines") replaced with role descriptions.
+  (Wave 2 / Finding #6a)
+
 ## [0.2.19] - 2026-06-10
 
 ### Fixed
