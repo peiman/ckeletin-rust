@@ -1,5 +1,20 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Framework crate version synced to `0.2.16`** — `Cargo.toml` had drifted 16
+  patch releases behind `.ckeletin/VERSION`. A new `version_sync` integration
+  test now asserts `CARGO_PKG_VERSION == trim(../VERSION)` at every `just check`,
+  making future drift a build failure (Principle 9).
+- **`Config::load()` rejects `--config` pointing at a directory** — previously a
+  path that existed but was a directory silently fell through to defaults, defeating
+  the explicit-config guard. Now returns a clear "is a directory" error.
+- **Framework unit tests use `figment::Jail` for env-var isolation** — replaced all
+  `std::env::set_var` / `remove_var` calls in `config.rs` with `figment::Jail`,
+  providing serialised, race-free env+fs isolation per test and unblocking
+  edition-2024 migration.
+
 ## [0.2.16] - 2026-06-05
 
 ### Added
