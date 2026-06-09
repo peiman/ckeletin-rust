@@ -1,3 +1,6 @@
+// OUT-005 exception: test skip-signal writes to stderr are legitimate test-harness
+// communication (not library output). The Output struct cannot be used here.
+#![allow(clippy::print_stderr)]
 //! Integration tests for logging::init().
 //!
 //! Each test runs in a separate process (cargo test runs each test file

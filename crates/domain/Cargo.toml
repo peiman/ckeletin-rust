@@ -13,6 +13,13 @@ license.workspace = true
 # If domain code tries `use clap::Parser` → compile error.
 # Violation tests in crates/domain/tests/ verify this (CKSPEC-ENF-006).
 
+[lints.clippy]
+# OUT-005: Domain MUST NOT write to stdout or stderr — all output through Output.
+# This lint fires at `cargo clippy` time, making the enforcement level "linter".
+# Verified: adding `println!("x")` to domain code fails `just ckeletin-clippy`.
+print_stdout = "deny"
+print_stderr = "deny"
+
 [dependencies]
 serde = { workspace = true }
 

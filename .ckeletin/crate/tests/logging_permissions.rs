@@ -1,3 +1,6 @@
+// OUT-005 exception: test skip-signal writes to stderr are legitimate test-harness
+// communication (not library output). The Output struct cannot be used here.
+#![allow(clippy::print_stderr)]
 //! Integration tests for audit log file/directory permissions.
 //!
 //! Runs as a separate test binary so it can call logging::init() once

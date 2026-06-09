@@ -1,3 +1,6 @@
+// OUT-005 exception: test skip-signal writes to stderr are legitimate test-harness
+// communication (not library output). The Output struct cannot be used here.
+#![allow(clippy::print_stderr)]
 //! `ckeletin-doctor` smoke test.
 //!
 //! The doctor is an environment diagnostic: it reports the framework version and
