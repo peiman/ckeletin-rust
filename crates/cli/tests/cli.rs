@@ -479,11 +479,24 @@ fn config_json_true_plus_output_text_overrides_to_human() {
 
 #[test]
 fn env_json_true_plus_output_text_overrides_to_human() {
-    // Explicit --output text must override CKELETIN_JSON=true.
+    // Explicit --output text must override json=true set via the config file.
+    // The config file mechanism is used here (rather than the CKELETIN_JSON env
+    // var) so the test holds after `just init` renames the env prefix — the
+    // config key `json` is not affected by the rename. The code path exercised
+    // (resolve_output_mode with explicit-text overriding config_json=true) is
+    // the same regardless of whether json_mode came from env or config.
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = write_config(tmp.path(), "json = true\nlog_file_enabled = false\n");
     let out = Command::cargo_bin("ckeletin-rust")
         .unwrap()
-        .args(["--no-audit", "--output", "text", "ping"])
-        .env("CKELETIN_JSON", "true")
+        .args([
+            "--no-audit",
+            "--output",
+            "text",
+            "--config",
+            cfg.to_str().unwrap(),
+            "ping",
+        ])
         .assert()
         .success()
         .get_output()
@@ -492,7 +505,7 @@ fn env_json_true_plus_output_text_overrides_to_human() {
     let stdout = String::from_utf8(out).unwrap();
     assert!(
         !stdout.contains("\"status\""),
-        "explicit --output text must override CKELETIN_JSON=true, got: {stdout}"
+        "explicit --output text must override config json=true, got: {stdout}"
     );
     assert!(
         stdout.contains("Pong!"),
@@ -503,35 +516,24 @@ fn env_json_true_plus_output_text_overrides_to_human() {
 #[test]
 fn config_json_true_error_path_is_json_envelope() {
     // Error path with config json=true must emit a JSON error envelope on stdout.
-    // We trigger a post-config-load error by providing a valid config (json=true)
-    // then an invalid --config path to force a config-load failure — but that runs
-    // before config-json is known. Instead use an audit-log path that the CLI will
-    // fail on (nonexistent directory that can't be created), but since log path
-    // errors are pre-guard, we need a different trigger.
     //
-    // Reliable trigger: provide config file with json=true and a valid config
-    // that will succeed, then use CKELETIN_JSON env together with a log path that
-    // causes a post-config init failure. Since we can't easily trigger a post-init
-    // command error in a test, we test the error envelope shape using an explicit
-    // --output json flag with a bad --config to confirm the pipeline produces JSON
-    // errors, and a separate config-json test confirms the json mode propagates.
+    // Trigger: config file sets json=true AND log_file_enabled=true with an
+    // unwritable log path (/dev/null/cannot-create-dir/app.log). logging::init
+    // fails post-config-load with json_mode already known as true, so the
+    // LogInitFailed variant carries json_mode=true → error renders as JSON.
     //
-    // The shadow-log fix (guard outlives error rendering) is separately validated
-    // by the audit-content test which checks the log after a successful run.
+    // The config-file mechanism is used for ALL trigger parameters (not env vars)
+    // so the test holds after `just init` renames the env prefix. Config keys
+    // (json, log_file_enabled, log_file_path) are not affected by the rename.
     let tmp = tempfile::tempdir().unwrap();
-    let cfg = write_config(tmp.path(), "json = true\nlog_file_enabled = false\n");
-    // Trigger an error by using a nonexistent subcommand path through a valid
-    // config that activates JSON mode — we verify config-activated JSON reaches
-    // the error path by using a log-file path error.
-    // The most reliable approach: use config with json=true and point the audit
-    // log at an unwritable path so logging::init fails post-config.
     let bad_audit = "/dev/null/cannot-create-dir/app.log";
+    let cfg = write_config(
+        tmp.path(),
+        &format!("json = true\nlog_file_enabled = true\nlog_file_path = \"{bad_audit}\"\n"),
+    );
     Command::cargo_bin("ckeletin-rust")
         .unwrap()
-        .args(["--config", cfg.to_str().unwrap()])
-        .env("CKELETIN_LOG_FILE_PATH", bad_audit)
-        .env("CKELETIN_LOG_FILE_ENABLED", "true")
-        .arg("ping")
+        .args(["--config", cfg.to_str().unwrap(), "ping"])
         .assert()
         .failure()
         .stdout(predicate::str::contains("\"status\": \"error\""))
