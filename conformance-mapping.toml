@@ -29,7 +29,7 @@ violation_tests = ["crates/domain/tests/violations/domain_imports_infrastructure
 title = "CLI framework isolation"
 status = "met"
 enforcement_level = "compile-time"
-evidence = "Only cli/Cargo.toml lists clap. Domain and infrastructure cannot import it."
+evidence = "Only crates/cli/Cargo.toml lists clap. Domain and infrastructure cannot import it."
 checks = ["cargo check --workspace"]
 violation_tests = [
     "crates/domain/tests/violations/domain_imports_clap.rs",
@@ -46,6 +46,7 @@ violation_tests = [
     "crates/domain/tests/violations/domain_imports_figment.rs",
     "crates/domain/tests/violations/domain_imports_tracing.rs",
 ]
+notes = "ARCH-004 at module level ('business logic packages MUST NOT import each other') is enforced at design level within the single domain crate — Rust cannot cheaply compile-time-enforce intra-crate module boundaries. The multi-crate split (domain/infrastructure/cli) is the documented upgrade path when domain grows. The compile-time claim applies to the cross-crate boundary (domain cannot import infrastructure/cli), which IS enforced at compile-time. Routed to spec feedback for requirement calibration (Wave 4)."
 
 [requirements.CKSPEC-ARCH-005]
 title = "Infrastructure independence"
@@ -58,11 +59,11 @@ violation_tests = ["crates/infrastructure/tests/violations/infra_imports_domain.
 [requirements.CKSPEC-ARCH-006]
 title = "Entry point minimality"
 status = "met"
-enforcement_level = "compile-time"
-evidence = "crates/cli/src/main.rs is bootstrap only — arg parsing, config, logging init, dispatch."
+enforcement_level = "design"
+evidence = "crates/cli/src/main.rs is the bootstrap entry — arg parsing, config loading, logging init, and dispatch. Feature logic lives in domain; the entry contains no business logic."
 checks = []
 violation_tests = []
-violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target. Domain and infrastructure crates are library-only."
+violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target. Domain and infrastructure crates are library-only. Entry-point minimality is a structural/design property — the compiler enforces that only cli has a bin target, but cannot enforce that main.rs stays minimal (that's a code-review / coverage judgment). Hence enforcement_level=design, not compile-time."
 
 [requirements.CKSPEC-ARCH-007]
 title = "Package location enforcement"
@@ -117,19 +118,19 @@ violation_evidence = "Analysis: CONFORMANCE.md maintains the living audit table 
 title = "Conformance mapping completeness"
 status = "met"
 enforcement_level = "script"
-evidence = "The conformance generator (.ckeletin/conform/src/main.rs, run by `just conform`) loads the spec requirement IDs (live, with vendored conformance/requirements.json fallback) and exits non-zero on any unmapped requirement before reporting."
+evidence = "The conformance generator (.ckeletin/conform/src/main.rs, run by `just conform`) is hermetic by default: it reads ONLY the committed conformance/requirements.json snapshot (no network, no file writes). `--refresh` (`just conform-refresh`) fetches the latest spec from upstream and rewrites the snapshot for deliberate, reviewed reconciliation. The generator exits non-zero on any unmapped requirement AND on any mapping entry whose ID is not in the spec (stale/invented IDs inflate totals). Both directions are checked before reporting."
 checks = []
 violation_tests = []
-violation_evidence = "Unit test find_unmapped_flags_a_requirement_missing_from_the_mapping in .ckeletin/conform/src/main.rs proves the completeness check detects an unmapped requirement; conform then exits non-zero (CI conform job)."
+violation_evidence = "Unit tests find_unmapped_flags_a_requirement_missing_from_the_mapping and find_extra_flags_a_mapping_entry_not_in_the_spec in .ckeletin/conform/src/main.rs prove both completeness directions; conform exits non-zero (CI conform job)."
 
 [requirements.CKSPEC-ENF-006]
 title = "Violation tests for enforcement claims"
 status = "met"
 enforcement_level = "script"
-evidence = "7 trybuild violation tests back the compile-time claims. `just conform` verifies each declared violation_test file exists and emits an ENF-007 feedback signal for any above-honor-system claim lacking a violation test or violation_evidence."
+evidence = "7 trybuild violation tests back the compile-time claims. `just conform` verifies each declared violation_test file exists and emits an ENF-007 feedback signal for any above-honor-system claim lacking a violation test or violation_evidence. Dangling anchor validation also verifies that evidence file paths and symbol names cited in the mapping actually exist."
 checks = ["cargo test --workspace"]
 violation_tests = []
-violation_evidence = "Unit tests lacks_proof_* in .ckeletin/conform/src/main.rs prove the proof-detection logic flags above-honor-system claims lacking a violation test or evidence."
+violation_evidence = "Unit tests lacks_proof_* and dangling_anchor_* in .ckeletin/conform/src/main.rs prove the proof-detection logic flags above-honor-system claims lacking a violation test or evidence, and that dangling file anchors are caught."
 
 [requirements.CKSPEC-ENF-007]
 title = "Automatic feedback signals"
@@ -153,10 +154,10 @@ violation_evidence = "Unit tests anchored_met_passes / unanchored_met_is_rejecte
 title = "Conformance gate on release"
 status = "met"
 enforcement_level = "ci"
-evidence = "The tag-triggered release workflow (.github/workflows/release.yml) gates its publish step on the conform job (`needs: conform`), so no release proceeds while conformance fails. A scheduled spec-drift job continuously checks the live spec_version against the vendored one and opens an issue when upstream advances — the 'verify against latest' half, since conform is deliberately hermetic (a documented divergence from ckeletin-go's live-fetch)."
+evidence = "The tag-triggered release workflow (.github/workflows/release.yml) gates its publish step on the conform job (`needs: conform`), so no release proceeds while conformance fails. A tag-version reconciliation step asserts the pushed tag (vX.Y.Z) equals the cli package CARGO_PKG_VERSION — preventing the historical incident where v0.2.0 was cut from package version 0.1.0. A scheduled spec-drift job continuously checks the live spec_version against the vendored one and opens an issue when upstream advances."
 checks = []
 violation_tests = []
-violation_evidence = ".github/workflows/release.yml gates release on the conform job; .github/workflows/ci.yml runs `just conform`; the spec-drift detector job surfaces upstream advances so drift is caught between releases."
+violation_evidence = ".github/workflows/release.yml gates release on the conform job; the tag-version step fails the release when the tag and package version disagree; .github/workflows/ci.yml runs `just conform`; the spec-drift detector job surfaces upstream advances so drift is caught between releases."
 
 [requirements.CKSPEC-ENF-010]
 title = "Published machine-readable conformance report"
@@ -245,15 +246,16 @@ enforcement_level = "script"
 evidence = "Output::success/message/error shadow-log the rendered data (not just the command name) to the audit layer, and file audit logging is on by default (Config.log_file_enabled defaults to true; --no-audit or log_file_enabled=false opts out). Active in both human and JSON modes."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
-violation_evidence = "Shadow-log unit tests success_shadow_logs_the_rendered_data + message_shadow_logs_the_message_text in .ckeletin/crate/src/output.rs; default-on/opt-out integration tests audit_log_written_by_default + no_audit_flag_disables_the_log_file in crates/cli/tests/cli.rs"
+violation_evidence = "Shadow-log unit tests success_shadow_logs_the_rendered_data + message_shadow_logs_the_message_text in .ckeletin/crate/src/output.rs; default-on/opt-out integration tests audit_log_written_under_config_home_by_default + no_audit_flag_disables_the_log_file in crates/cli/tests/cli.rs; content test audit_log_content_contains_output_success_event_and_data in crates/cli/tests/cli.rs"
 
 [requirements.CKSPEC-OUT-005]
 title = "Output isolation from business logic"
 status = "met"
-enforcement_level = "compile-time"
-evidence = "Domain crate has no std::io path. Cannot write to stdout."
-checks = ["cargo check --workspace"]
-violation_tests = ["crates/domain/tests/violations/domain_imports_infrastructure.rs"]
+enforcement_level = "linter"
+evidence = "Domain, infrastructure, and framework crates each declare `[lints.clippy] print_stdout = 'deny'` and `print_stderr = 'deny'` in their Cargo.toml. A `println!` in domain or infrastructure code fails `cargo clippy` (lint-level, not just compile-time). Verified: adding `println!(\"x\")` to domain code produces `error: use of println!` under the print_stdout lint and the compile fails. The cli crate (presentation layer) is exempt — it is the only crate authorized to write to stdout/stderr via the Output struct."
+checks = ["just ckeletin-clippy"]
+violation_tests = []
+violation_evidence = "crates/domain/Cargo.toml, crates/infrastructure/Cargo.toml, and .ckeletin/crate/Cargo.toml each carry `[lints.clippy] print_stdout = 'deny' / print_stderr = 'deny'`. These lints run in `just ckeletin-clippy` (part of `just check`, gated by CI). A regression (adding a println! to domain) fails the lint and hence fails CI. Verified during this conformance wave: a temporary println! probe appended to domain code produced `error: use of println!` (clippy::print_stdout) and nonzero clippy exit; the probe was removed before committing."
 
 [requirements.CKSPEC-OUT-006]
 title = "Build identity in version output"
