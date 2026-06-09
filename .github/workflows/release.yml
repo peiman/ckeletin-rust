@@ -16,8 +16,9 @@ on:
     tags:
       - "v*"
 
+# Least-privilege default; publish overrides to contents: write for release upload.
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,7 +28,7 @@ jobs:
     name: Conformance gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -42,8 +43,10 @@ jobs:
     name: Publish release
     needs: conform
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the GitHub release and upload assets
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -53,6 +56,27 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
+      - name: Resolve binary name and generate checksums
+        run: |
+          set -euo pipefail
+          # Derive the binary name from the workspace metadata instead of
+          # hardcoding it — consumer repos that rename the binary won't silently
+          # ship a stale or absent artifact.
+          BIN=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="cli") | .targets[] | select(.kind[] == "bin") | .name')
+          if [ -z "$BIN" ]; then
+            echo "ERROR: could not resolve binary name from cargo metadata" >&2
+            exit 1
+          fi
+          echo "Binary resolved: $BIN"
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+
+          # Generate sha256 checksums for the release artifact.
+          cd target/release
+          sha256sum "$BIN" > "${BIN}.sha256"
+          echo "Checksums:"
+          cat "${BIN}.sha256"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,4 +85,5 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            target/release/ckeletin-rust
+            "target/release/${BIN}" \
+            "target/release/${BIN}.sha256"
