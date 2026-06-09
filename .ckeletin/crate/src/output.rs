@@ -69,24 +69,30 @@ impl Output {
     ///
     /// Human mode: Display format to stdout.
     /// JSON mode: envelope to stdout.
-    /// Both modes: shadow log to audit stream (CKSPEC-OUT-004).
+    /// Both modes: shadow log to audit stream AFTER the write (CKSPEC-OUT-004).
+    ///
+    /// The shadow-log event is emitted after the write completes so the audit
+    /// trail reflects what was actually delivered to the user, not what was
+    /// intended — a failed write does not produce a misleading "output.success"
+    /// record (Principle 1 — Truth-Seeking).
     pub fn success<T: Serialize + std::fmt::Display>(
         &self,
         command: &str,
         data: &T,
         out: &mut dyn Write,
     ) -> io::Result<()> {
-        // Shadow log the rendered data, not just the command name, so the
-        // audit stream contains at least what the user saw (CKSPEC-OUT-004).
-        tracing::debug!(command = command, data = %data, "output.success");
         match self.mode {
-            OutputMode::Human => writeln!(out, "{data}"),
+            OutputMode::Human => writeln!(out, "{data}")?,
             OutputMode::Json => {
                 let envelope = Envelope::success(command, data).map_err(io::Error::other)?;
                 serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
-                writeln!(out)
+                writeln!(out)?;
             }
         }
+        // Shadow log AFTER the successful write: the audit stream records what
+        // actually reached the user (CKSPEC-OUT-004).
+        tracing::debug!(command = command, data = %data, "output.success");
+        Ok(())
     }
 
     /// Render a human-addressed success message with no structured
@@ -104,10 +110,8 @@ impl Output {
     /// `success(..)` instead — this method is specifically for the
     /// "no-data-to-serialize" case.
     pub fn message(&self, command: &str, msg: &str, out: &mut dyn Write) -> io::Result<()> {
-        // Shadow log the message text, not just the command name (CKSPEC-OUT-004).
-        tracing::debug!(command = command, text = msg, "output.message");
         match self.mode {
-            OutputMode::Human => writeln!(out, "{msg}"),
+            OutputMode::Human => writeln!(out, "{msg}")?,
             OutputMode::Json => {
                 let envelope = Envelope {
                     status: Status::Success,
@@ -116,16 +120,19 @@ impl Output {
                     error: None,
                 };
                 serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
-                writeln!(out)
+                writeln!(out)?;
             }
         }
+        // Shadow log AFTER the successful write (CKSPEC-OUT-004, Principle 1).
+        tracing::debug!(command = command, text = msg, "output.message");
+        Ok(())
     }
 
     /// Render error output.
     ///
     /// Human mode: message to stderr writer.
     /// JSON mode: envelope to stdout writer.
-    /// Both modes: shadow log to audit stream (CKSPEC-OUT-004).
+    /// Both modes: shadow log to audit stream AFTER the write (CKSPEC-OUT-004).
     pub fn error(
         &self,
         command: &str,
@@ -133,15 +140,17 @@ impl Output {
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> io::Result<()> {
-        tracing::debug!(command = command, error = err_msg, "output.error");
         match self.mode {
-            OutputMode::Human => writeln!(stderr, "Error: {err_msg}"),
+            OutputMode::Human => writeln!(stderr, "Error: {err_msg}")?,
             OutputMode::Json => {
                 let envelope = Envelope::error(command, err_msg);
                 serde_json::to_writer_pretty(&mut *stdout, &envelope).map_err(io::Error::other)?;
-                writeln!(stdout)
+                writeln!(stdout)?;
             }
         }
+        // Shadow log AFTER the successful write (CKSPEC-OUT-004, Principle 1).
+        tracing::debug!(command = command, error = err_msg, "output.error");
+        Ok(())
     }
 }
 
@@ -429,6 +438,85 @@ mod tests {
         assert!(
             logged.contains("no recorded history yet"),
             "audit log must contain the message text, got: {logged}"
+        );
+    }
+
+    // --- Shadow-log after write tests (CKSPEC-OUT-004 truth ordering) ---
+    //
+    // The audit log must record what was ACTUALLY delivered to the user, not
+    // what was INTENDED. Moving the tracing event after the write means a
+    // failed write does not produce a misleading "output.success" audit record.
+
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("simulated write failure"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // --- Serialization-failure branch test (CKSPEC-OUT-003) ---
+    //
+    // Output::success and ::message map serialization errors through io::Error;
+    // this tests the Err arm with a type whose Serialize impl always fails.
+
+    struct AlwaysFailsSerialize;
+
+    impl std::fmt::Display for AlwaysFailsSerialize {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "fail-serialize-display")
+        }
+    }
+
+    impl serde::Serialize for AlwaysFailsSerialize {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("deliberate test failure"))
+        }
+    }
+
+    #[test]
+    fn json_success_returns_err_on_serialization_failure() {
+        let output = Output::new(OutputMode::Json);
+        let mut buf = Vec::new();
+        let result = output.success("cmd", &AlwaysFailsSerialize, &mut buf);
+        assert!(
+            result.is_err(),
+            "Output::success must return Err when Serialize fails"
+        );
+        // Nothing should have been written to the output buffer.
+        assert!(
+            buf.is_empty(),
+            "no bytes must be written on serialization failure"
+        );
+    }
+
+    #[test]
+    fn success_does_not_shadow_log_on_write_failure() {
+        // If the write fails, the audit log must NOT record output.success —
+        // otherwise the audit trail asserts delivery that never happened.
+        let logged = capture_shadow_log(|| {
+            let output = Output::new(OutputMode::Human);
+            let mut w = FailingWriter;
+            let _ = output.success("ping", &test_data("alive"), &mut w);
+        });
+        assert!(
+            !logged.contains("output.success"),
+            "output.success must NOT be shadow-logged when the write fails, got: {logged}"
+        );
+    }
+
+    #[test]
+    fn message_does_not_shadow_log_on_write_failure() {
+        let logged = capture_shadow_log(|| {
+            let output = Output::new(OutputMode::Human);
+            let mut w = FailingWriter;
+            let _ = output.message("cmd", "hello", &mut w);
+        });
+        assert!(
+            !logged.contains("output.message"),
+            "output.message must NOT be shadow-logged when the write fails, got: {logged}"
         );
     }
 }
