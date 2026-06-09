@@ -86,9 +86,14 @@ impl Config {
         let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
 
         if let Some(path) = config_path {
-            // Explicit --config: file MUST exist. Silent fallback is misleading.
-            if !std::path::Path::new(path).exists() {
+            let p = std::path::Path::new(path);
+            // Explicit --config: file MUST exist and MUST be a regular file.
+            // Silent fallback on not-found or is-a-directory is misleading.
+            if !p.exists() {
                 return Err(format!("config file not found: {path}").into());
+            }
+            if p.is_dir() {
+                return Err(format!("config path is a directory, not a file: {path}").into());
             }
             figment = figment.merge(Toml::file(path));
         } else {
@@ -104,8 +109,10 @@ impl Config {
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // figment::Error is large; acceptable in test code
 mod tests {
     use super::*;
+    use figment::Jail;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -170,71 +177,94 @@ mod tests {
     }
 
     #[test]
-    fn env_prefix_is_respected() {
-        // Use a unique prefix to avoid interference with other tests
-        let prefix = "CKROBUST_";
-        std::env::set_var("CKROBUST_LOG_LEVEL", "trace");
-        let config = Config::load(None, prefix).unwrap();
-        assert_eq!(config.log_level, "trace");
-        std::env::remove_var("CKROBUST_LOG_LEVEL");
+    fn explicit_config_pointing_at_directory_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = Config::load(Some(dir.path().to_str().unwrap()), TEST_PREFIX);
+        assert!(
+            result.is_err(),
+            "Expected error when --config points at a directory, got Ok"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("directory") || err.contains("not a file"),
+            "Error message should mention directory or 'not a file': {err}"
+        );
     }
 
+    /// Helper: map Config::load's Box<dyn Error> into figment::Error for Jail closures.
+    fn load_in_jail(config_path: Option<&str>, prefix: &str) -> figment::Result<Config> {
+        Config::load(config_path, prefix).map_err(|e| e.to_string().into())
+    }
+
+    /// Env prefix is respected — uses figment::Jail for race-free env isolation.
+    #[test]
+    fn env_prefix_is_respected() {
+        Jail::expect_with(|jail| {
+            jail.set_env("CKROBUST_LOG_LEVEL", "trace");
+            let config = load_in_jail(None, "CKROBUST_")?;
+            assert_eq!(config.log_level, "trace");
+            Ok(())
+        });
+    }
+
+    /// Wrong prefix env vars are ignored — uses figment::Jail for isolation.
     #[test]
     fn different_prefix_ignores_other_env_vars() {
-        std::env::set_var("WRONGPREFIX_LOG_LEVEL", "error");
-        let config = Config::load(None, "RIGHTPREFIX_").unwrap();
-        assert_eq!(config.log_level, "info");
-        std::env::remove_var("WRONGPREFIX_LOG_LEVEL");
+        Jail::expect_with(|jail| {
+            jail.set_env("WRONGPREFIX_LOG_LEVEL", "error");
+            let config = load_in_jail(None, "RIGHTPREFIX_")?;
+            assert_eq!(config.log_level, "info");
+            Ok(())
+        });
     }
 
     /// Every config field must be settable via env var.
     /// This catches the .split("_") bug that silently broke env overrides.
+    /// Uses figment::Jail for serialised, race-free env+fs isolation.
     #[test]
     fn every_config_field_settable_via_env() {
-        let prefix = "CKEVERY_";
-        std::env::set_var("CKEVERY_LOG_LEVEL", "error");
-        std::env::set_var("CKEVERY_LOG_FILE_ENABLED", "true");
-        std::env::set_var("CKEVERY_LOG_FILE_PATH", "/tmp/test.log");
-        std::env::set_var("CKEVERY_LOG_FILE_LEVEL", "trace");
-        std::env::set_var("CKEVERY_LOG_LOCATION", "platform");
-        std::env::set_var("CKEVERY_JSON", "true");
+        Jail::expect_with(|jail| {
+            jail.set_env("CKEVERY_LOG_LEVEL", "error");
+            jail.set_env("CKEVERY_LOG_FILE_ENABLED", "true");
+            jail.set_env("CKEVERY_LOG_FILE_PATH", "/tmp/test.log");
+            jail.set_env("CKEVERY_LOG_FILE_LEVEL", "trace");
+            jail.set_env("CKEVERY_LOG_LOCATION", "platform");
+            jail.set_env("CKEVERY_JSON", "true");
 
-        let config = Config::load(None, prefix).unwrap();
-        assert_eq!(config.log_level, "error", "LOG_LEVEL env not applied");
-        assert!(config.log_file_enabled, "LOG_FILE_ENABLED env not applied");
-        assert_eq!(
-            config.log_file_path, "/tmp/test.log",
-            "LOG_FILE_PATH env not applied"
-        );
-        assert_eq!(
-            config.log_file_level, "trace",
-            "LOG_FILE_LEVEL env not applied"
-        );
-        assert_eq!(
-            config.log_location, "platform",
-            "LOG_LOCATION env not applied"
-        );
-        assert!(config.json, "JSON env not applied");
-
-        std::env::remove_var("CKEVERY_LOG_LEVEL");
-        std::env::remove_var("CKEVERY_LOG_FILE_ENABLED");
-        std::env::remove_var("CKEVERY_LOG_FILE_PATH");
-        std::env::remove_var("CKEVERY_LOG_FILE_LEVEL");
-        std::env::remove_var("CKEVERY_LOG_LOCATION");
-        std::env::remove_var("CKEVERY_JSON");
+            let config = load_in_jail(None, "CKEVERY_")?;
+            assert_eq!(config.log_level, "error", "LOG_LEVEL env not applied");
+            assert!(config.log_file_enabled, "LOG_FILE_ENABLED env not applied");
+            assert_eq!(
+                config.log_file_path, "/tmp/test.log",
+                "LOG_FILE_PATH env not applied"
+            );
+            assert_eq!(
+                config.log_file_level, "trace",
+                "LOG_FILE_LEVEL env not applied"
+            );
+            assert_eq!(
+                config.log_location, "platform",
+                "LOG_LOCATION env not applied"
+            );
+            assert!(config.json, "JSON env not applied");
+            Ok(())
+        });
     }
 
     /// Env vars override TOML file values (precedence: default < file < env).
+    /// Uses figment::Jail for serialised, race-free env+fs isolation.
     #[test]
     fn env_overrides_toml_file() {
-        let prefix = "CKPREC_";
-        let mut file = NamedTempFile::with_suffix(".toml").unwrap();
-        writeln!(file, "log_level = \"debug\"").unwrap();
-        std::env::set_var("CKPREC_LOG_LEVEL", "error");
+        Jail::expect_with(|jail| {
+            // Create a TOML file in the jail's temp directory
+            jail.create_file("config.toml", "log_level = \"debug\"\n")?;
+            jail.set_env("CKPREC_LOG_LEVEL", "error");
 
-        let config = Config::load(Some(file.path().to_str().unwrap()), prefix).unwrap();
-        assert_eq!(config.log_level, "error", "env should override TOML");
-
-        std::env::remove_var("CKPREC_LOG_LEVEL");
+            // Pass the absolute path to the file created in the jail
+            let config_path = jail.directory().join("config.toml");
+            let config = load_in_jail(Some(config_path.to_str().unwrap()), "CKPREC_")?;
+            assert_eq!(config.log_level, "error", "env should override TOML");
+            Ok(())
+        });
     }
 }
