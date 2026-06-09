@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.17] - 2026-06-10
 
 ### Fixed
 - **Framework crate version synced to `0.2.16`** — `Cargo.toml` had drifted 16
