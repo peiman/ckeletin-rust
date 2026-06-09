@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
     fmt, layer::SubscriberExt, registry, util::SubscriberInitExt, EnvFilter, Layer,
 };
@@ -33,9 +34,28 @@ impl Default for LogConfig {
     }
 }
 
-/// Build an EnvFilter from a level string, falling back to the provided default.
-fn build_filter(level: &str, fallback: &str) -> EnvFilter {
-    EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new(fallback))
+/// Validate that `level` is a bare log-level string (trace/debug/info/warn/error/off).
+/// Returns `Ok(())` when valid, `Err` with a descriptive message otherwise.
+///
+/// "off" is always valid — it is used internally to suppress the console stream
+/// in JSON mode. Non-level directive strings (e.g. `target=debug`) are rejected:
+/// the shadow-log contract (CKSPEC-OUT-004) depends on the file level filtering
+/// predictably, and a target directive that parses successfully but suppresses
+/// `ckeletin::output` events silently kills the audit stream.
+fn validate_level(level: &str) -> Result<(), std::io::Error> {
+    match level {
+        "trace" | "debug" | "info" | "warn" | "error" | "off" => Ok(()),
+        _ => Err(std::io::Error::other(format!(
+            "invalid log level {:?}: expected one of trace, debug, info, warn, error, off",
+            level
+        ))),
+    }
+}
+
+/// Build an EnvFilter from a validated level string.
+fn build_filter(level: &str) -> EnvFilter {
+    // Caller has already validated; EnvFilter::new on a bare level cannot fail.
+    EnvFilter::new(level)
 }
 
 /// Read an environment variable as an absolute path, if set and absolute.
@@ -117,21 +137,78 @@ pub fn resolve_audit_path(configured: &str, location: &str, app: &str) -> PathBu
 }
 
 /// Prepare the log file directory and appender.
-/// Returns (non_blocking_writer, guard) or an error if the directory can't be created.
+///
+/// Returns `(non_blocking_writer, guard)` on success, or an `io::Error` when:
+/// - `file_path` is empty (would scatter files outside the app directory),
+/// - the log directory cannot be created, or
+/// - the appender cannot create the log file (e.g. permission denied on an
+///   existing directory — the case that previously caused a panic via
+///   `tracing_appender::rolling::daily`).
+///
+/// On Unix the log directory is created with mode 0700 and the appender
+/// pre-creates the initial log file with mode 0600 so audit contents are
+/// not world-readable. (CKSPEC-OUT-004 mandates shadow logging; narrowed
+/// permissions are appropriate for a per-user audit stream.)
 fn prepare_file_appender(
     file_path: &str,
 ) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), std::io::Error> {
+    if file_path.is_empty() {
+        return Err(std::io::Error::other(
+            "log_file_path must not be empty; set a path or disable the audit log",
+        ));
+    }
+
     let log_path = std::path::Path::new(file_path);
     let log_dir = log_path.parent().unwrap_or(std::path::Path::new("."));
     let log_name = log_path
         .file_name()
-        .unwrap_or_default()
+        .ok_or_else(|| {
+            std::io::Error::other(format!(
+                "log_file_path {:?} has no filename component",
+                file_path
+            ))
+        })?
         .to_string_lossy()
         .to_string();
 
-    std::fs::create_dir_all(log_dir)?;
+    // Create the directory with restricted permissions (Unix: 0700).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(log_dir)?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(log_dir)?;
+    }
 
-    let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
+    // Use the builder API (returns Result) instead of the infallible
+    // `rolling::daily` (which panics on file-creation failure — e.g.
+    // permission denied on an existing directory).
+    let file_appender = RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix(&log_name)
+        .build(log_dir)
+        .map_err(|e| std::io::Error::other(format!("failed to initialize audit log: {e}")))?;
+
+    // Narrow the initial log file's permissions to 0600 on Unix.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // The daily roller just created the file; find it and chmod it.
+        if let Ok(entries) = std::fs::read_dir(log_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.to_string_lossy().contains(log_name.as_str()) {
+                    let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+                }
+            }
+        }
+    }
+
     Ok(tracing_appender::non_blocking(file_appender))
 }
 
@@ -141,8 +218,18 @@ fn prepare_file_appender(
 /// CKSPEC-OUT-004: shadow logging — output.rs emits tracing events that land here.
 ///
 /// Returns a guard that must be held until shutdown (flushes file writer).
+///
+/// Returns `Err` for:
+/// - An invalid `console_level` or `file_level` string (not a bare level word).
+///   Invalid levels were previously silently ignored, which could empty the audit
+///   stream without warning (a `log_file_level = "info"` config plausibly set to
+///   reduce noise silences shadow-log events emitted at DEBUG).
+/// - Any file-creation failure (permission denied, invalid path, etc.). These
+///   flow to the caller as a clean error envelope + exit 1, not a panic.
 pub fn init(config: &LogConfig) -> Result<LogGuard, Box<dyn std::error::Error>> {
-    let stderr_filter = build_filter(&config.console_level, "info");
+    validate_level(&config.console_level)?;
+
+    let stderr_filter = build_filter(&config.console_level);
 
     let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)
@@ -151,9 +238,10 @@ pub fn init(config: &LogConfig) -> Result<LogGuard, Box<dyn std::error::Error>> 
         .with_filter(stderr_filter);
 
     if config.file_enabled {
+        validate_level(&config.file_level)?;
         let (non_blocking, guard) = prepare_file_appender(&config.file_path)?;
 
-        let file_filter = build_filter(&config.file_level, "debug");
+        let file_filter = build_filter(&config.file_level);
 
         let file_layer = fmt::layer()
             .json()
@@ -205,7 +293,7 @@ mod tests {
 
     #[test]
     fn build_filter_accepts_valid_level() {
-        let filter = build_filter("debug", "info");
+        let filter = build_filter("debug");
         // Filter should accept debug-level events
         assert_eq!(format!("{filter}"), "debug");
     }
@@ -213,7 +301,7 @@ mod tests {
     #[test]
     fn build_filter_handles_all_standard_levels() {
         for level in &["trace", "debug", "info", "warn", "error", "off"] {
-            let filter = build_filter(level, "info");
+            let filter = build_filter(level);
             assert_eq!(
                 format!("{filter}"),
                 *level,
@@ -224,14 +312,67 @@ mod tests {
 
     #[test]
     fn build_filter_handles_off() {
-        let filter = build_filter("off", "info");
+        let filter = build_filter("off");
         assert_eq!(format!("{filter}"), "off");
     }
 
     #[test]
     fn build_filter_handles_trace() {
-        let filter = build_filter("trace", "info");
+        let filter = build_filter("trace");
         assert_eq!(format!("{filter}"), "trace");
+    }
+
+    // ── build_filter validation tests ──────────────────────────
+
+    #[test]
+    fn build_filter_rejects_invalid_console_level() {
+        // A non-level string like "inof" is not a valid log level and must
+        // return Err — not silently fall back and leave the audit stream empty.
+        let result = validate_level("inof");
+        assert!(
+            result.is_err(),
+            "invalid console level string must produce an error"
+        );
+    }
+
+    #[test]
+    fn build_filter_rejects_invalid_file_level() {
+        let result = validate_level("debgu");
+        assert!(
+            result.is_err(),
+            "invalid file level string must produce an error"
+        );
+    }
+
+    #[test]
+    fn build_filter_accepts_off() {
+        // "off" is used internally for JSON mode (no stderr noise) — must stay valid.
+        let result = validate_level("off");
+        assert!(result.is_ok(), "\"off\" must be a valid level");
+    }
+
+    #[test]
+    fn build_filter_accepts_all_standard_levels_via_validate() {
+        for level in &["trace", "debug", "info", "warn", "error"] {
+            let result = validate_level(level);
+            assert!(
+                result.is_ok(),
+                "standard level {:?} must be accepted, got: {:?}",
+                level,
+                result
+            );
+        }
+    }
+
+    // ── empty log_file_path tests ───────────────────────────────
+
+    #[test]
+    fn empty_log_file_path_is_an_error() {
+        let result = prepare_file_appender("");
+        assert!(
+            result.is_err(),
+            "empty log_file_path must return an error, not scatter files"
+        );
     }
 
     // ── prepare_file_appender tests ─────────────────────────────

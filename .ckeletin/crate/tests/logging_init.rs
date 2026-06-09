@@ -5,9 +5,51 @@
 //! conflicting with other tests that set the global subscriber.
 //!
 //! This file tests the file-logging path — the code at 59% coverage.
+//! Permission tests live in logging_permissions.rs (separate binary).
 
 use ckeletin::logging::{init, LogConfig};
 use std::fs;
+
+#[cfg(unix)]
+#[test]
+fn prepare_file_appender_errors_not_panics_on_unwritable_dir() {
+    // root bypasses file permissions; skip to avoid false pass.
+    // Check via `id -u` which doesn't require libc.
+    let uid = std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(1);
+    if uid == 0 {
+        eprintln!("SKIP: running as root, permission tests are unreliable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+
+    // Make directory unwritable so appender cannot create a file inside it.
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let log_path = dir.path().join("app.log");
+    let config = LogConfig {
+        console_level: "off".to_string(),
+        file_enabled: true,
+        file_path: log_path.to_str().unwrap().to_string(),
+        file_level: "debug".to_string(),
+    };
+
+    // Must return Err, NOT panic (exit 101).
+    let result = init(&config);
+    assert!(
+        result.is_err(),
+        "init() must return Err on permission-denied directory, not panic"
+    );
+
+    // Restore permissions so tempdir cleanup works.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+}
 
 #[test]
 fn init_with_file_logging_creates_log_file_and_returns_guard() {
