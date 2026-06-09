@@ -109,4 +109,90 @@ fn doctor_json_is_machine_readable() {
             .is_some(),
         "json missing boolean tools.cargo-deny: {v}"
     );
+
+    // rustfmt and clippy components (required by `just check`) must appear in
+    // JSON parity with the text mode that has always reported them.
+    assert!(
+        v.pointer("/components/rustfmt")
+            .and_then(|x| x.as_bool())
+            .is_some(),
+        "json missing boolean components.rustfmt: {v}"
+    );
+    assert!(
+        v.pointer("/components/clippy")
+            .and_then(|x| x.as_bool())
+            .is_some(),
+        "json missing boolean components.clippy: {v}"
+    );
+}
+
+#[test]
+fn doctor_json_and_text_report_same_components() {
+    // Parity test: the text mode and JSON mode must both report rustfmt and
+    // clippy component presence. This catches the case where one mode is
+    // updated without the other (finding #10 from the 2026-06-09 code review).
+    if !have("just") {
+        eprintln!("SKIP doctor_json_and_text_report_same_components: `just` not on PATH");
+        return;
+    }
+
+    let root = workspace_root();
+
+    let text_out = Command::new("just")
+        .arg("ckeletin-doctor")
+        .current_dir(&root)
+        .output()
+        .expect("failed to run `just ckeletin-doctor`");
+    let text_stdout = String::from_utf8_lossy(&text_out.stdout);
+
+    let json_out = Command::new("just")
+        .args(["ckeletin-doctor", "json"])
+        .current_dir(&root)
+        .output()
+        .expect("failed to run `just ckeletin-doctor json`");
+    let json_stdout = String::from_utf8_lossy(&json_out.stdout);
+
+    let v: serde_json::Value = serde_json::from_str(json_stdout.trim())
+        .unwrap_or_else(|e| panic!("doctor json is not valid JSON: {e}\njson: {json_stdout}"));
+
+    // Text mode must mention both components.
+    assert!(
+        text_stdout.contains("rustfmt component"),
+        "text mode must mention 'rustfmt component'.\nstdout: {text_stdout}"
+    );
+    assert!(
+        text_stdout.contains("clippy component"),
+        "text mode must mention 'clippy component'.\nstdout: {text_stdout}"
+    );
+
+    // JSON must have components.rustfmt and components.clippy as booleans.
+    let rustfmt_json = v.pointer("/components/rustfmt").and_then(|x| x.as_bool());
+    let clippy_json = v.pointer("/components/clippy").and_then(|x| x.as_bool());
+
+    assert!(
+        rustfmt_json.is_some(),
+        "json must have boolean /components/rustfmt.\njson: {v}"
+    );
+    assert!(
+        clippy_json.is_some(),
+        "json must have boolean /components/clippy.\njson: {v}"
+    );
+
+    // Both modes must agree on installed/not-installed for both components.
+    // Text mode says "installed" vs "NOT FOUND", JSON mode uses true/false.
+    let rustfmt_text_installed = text_stdout.contains("rustfmt component: installed");
+    let clippy_text_installed = text_stdout.contains("clippy component: installed");
+
+    assert_eq!(
+        rustfmt_text_installed,
+        rustfmt_json.unwrap(),
+        "rustfmt presence disagrees between text ({rustfmt_text_installed}) and json ({:?})",
+        rustfmt_json
+    );
+    assert_eq!(
+        clippy_text_installed,
+        clippy_json.unwrap(),
+        "clippy presence disagrees between text ({clippy_text_installed}) and json ({:?})",
+        clippy_json
+    );
 }

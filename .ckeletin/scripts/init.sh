@@ -9,12 +9,29 @@ if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
     exit 1
 fi
 
-# Pre-flight: warn about uncommitted changes. Automatable: set
-# CKELETIN_ASSUME_YES=1 to proceed without a prompt (for agent/CI use). In a
-# non-interactive shell without that var we REFUSE rather than silently discard
-# uncommitted work.
-if [ -d .git ] && ! git diff --quiet 2>/dev/null; then
-    echo "Warning: uncommitted changes exist. Init resets git history — uncommitted work will be lost."
+# Guard: refuse to run on an already-initialized / consumer repo.
+# Detection: the upstream slug "peiman/ckeletin-rust" is rewritten by THIS
+# script (step 2 below) so if it's absent, this is a derived project.
+# Pass `force=true` as the second argument to bypass (use with care).
+FORCE="${2:-false}"
+if ! grep -q "peiman/ckeletin-rust" Cargo.toml 2>/dev/null; then
+    if [ "$FORCE" != "true" ]; then
+        echo "Error: this repo no longer looks like the ckeletin-rust scaffold" \
+             "(the upstream slug 'peiman/ckeletin-rust' is absent from Cargo.toml)."
+        echo "If this is a fresh clone that was already init'd, do not run init again."
+        echo "To force (e.g. re-init intentionally): just init name=$NAME force=true"
+        exit 1
+    fi
+    echo "Warning: force=true — bypassing already-initialized guard."
+fi
+
+# Pre-flight: warn about uncommitted changes. Checks BOTH unstaged and staged
+# changes so that `git add`-ed work is not silently destroyed by the git
+# history reset in step 8. Automatable: set CKELETIN_ASSUME_YES=1 to proceed
+# without a prompt (for agent/CI use). In a non-interactive shell without that
+# var we REFUSE rather than silently discard uncommitted work.
+if [ -d .git ] && { ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; }; then
+    echo "Warning: uncommitted changes exist (working tree or staging area). Init resets git history — uncommitted work will be lost."
     if [ "${CKELETIN_ASSUME_YES:-}" = "1" ]; then
         echo "CKELETIN_ASSUME_YES=1 — proceeding without prompt."
     elif [ -t 0 ]; then
@@ -48,14 +65,11 @@ sedi "s/ckeletin-rust/$NAME/g" crates/cli/src/root.rs
 # 2. Update workspace metadata
 sedi "s|peiman/ckeletin-rust|peiman/$NAME|g" Cargo.toml
 
-# 3. Update Justfile binary name
-sedi "s/binary_name := \"ckeletin-rust\"/binary_name := \"$NAME\"/" Justfile
-
-# 4. Update env prefix in main.rs (CKELETIN_ → PROJECT_NAME_)
+# 3. Update env prefix in main.rs (CKELETIN_ → PROJECT_NAME_)
 UPPER_NAME=$(echo "$NAME" | tr '[:lower:]-' '[:upper:]_')
 sedi "s/\"CKELETIN_\"/\"${UPPER_NAME}_\"/" crates/cli/src/main.rs
 
-# 5. Update ping message to use new name
+# 4. Update ping message to use new name
 sedi "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
 sedi "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
 
@@ -69,7 +83,7 @@ sedi "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
 # `ping` when you add your first real command — see AGENTS.md, "Adding a New
 # Command". Ref: https://github.com/peiman/ckeletin-rust/issues/1
 
-# 6. Reset CHANGELOG.md
+# 5. Reset CHANGELOG.md
 cat > CHANGELOG.md << 'CHANGELOG'
 # Changelog
 
@@ -81,9 +95,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 CHANGELOG
 
-# 7. Verify — compile ALL targets (lib, bin, AND tests). Checking only the
-#    default targets would miss a broken integration-test file: a test that
-#    fails to compile does not surface until the user's first `just check`.
+# 6. Verify — compile ALL targets (lib, bin, AND tests) BEFORE resetting git
+#    history. Destroying git history and then failing is far worse than failing
+#    and leaving history intact. Checking only the default targets would miss a
+#    broken integration-test file: a test that fails to compile does not surface
+#    until the user's first `just check`.
 echo "Verifying..."
 if cargo check --workspace --all-targets -q; then
     echo "Workspace and tests compile."
@@ -92,7 +108,7 @@ else
     exit 1
 fi
 
-# 8. Reset git history
+# 7. Reset git history — AFTER compile verification above.
 CKELETIN_VERSION=$(cat .ckeletin/VERSION)
 rm -rf .git
 git init
@@ -104,3 +120,6 @@ echo ""
 echo "Done! $NAME is ready."
 echo "  Binary: cargo run -p cli"
 echo "  Tests:  just check"
+echo ""
+echo "Remember: update the copyright holder and year in LICENSE-MIT and"
+echo "LICENSE-APACHE to reflect your project before distributing."
