@@ -1,7 +1,7 @@
 # Framework Update Mechanism for ckeletin-rust
 
 **Date:** 2026-04-14
-**Status:** Design approved, revised after manifesto review
+**Status:** Shipped (framework v0.2.x) — update/init/health flows implemented; see §Migration Flow for deferred items
 **Scope:** Restructure ckeletin-rust to support framework updates, project initialization, and migration of existing projects
 
 ## Problem
@@ -210,6 +210,13 @@ No import rewriting. The crate name `ckeletin` is stable across all versions.
 
 ## Migration Flow (Existing Projects)
 
+> **Deferred — not implemented; revisit when the first real breaking framework
+> change ships (Principle 4 — Lean Iteration).** The design below is the
+> intended flow, preserved as the spec for that future implementation. Nothing
+> in `.ckeletin/` currently provides `ckeletin-migrate` or `.ckeletin/migrations/`.
+> `just ckeletin-update` runs no migration scripts. Build it when the first
+> breaking change demands it — not speculatively.
+
 `just ckeletin-migrate prefix=workhorse` — one-time conversion for projects built from the old scaffold.
 
 Example: workhorse has `workhorse-domain`, `workhorse-infrastructure`, `workhorse-cli`.
@@ -276,6 +283,10 @@ test:
 
 ## Version Compatibility and Migrations
 
+> **Deferred — not implemented** (see §Migration Flow above). The convention
+> below is the intended design; no migration scripts exist yet and
+> `ckeletin-update` does not run them. Revisit when the first breaking change ships.
+
 Framework versions follow semver. Breaking changes between versions are handled by migration scripts.
 
 **Convention:** `.ckeletin/migrations/{version}.sh` — one script per version that introduces breaking changes. Each script is idempotent (safe to run multiple times).
@@ -290,11 +301,14 @@ Framework versions follow semver. Breaking changes between versions are handled 
 
 **Violation test templates:** `.ckeletin/tests/violations/` contains the template `.rs` files. During init, these are copied to project `crates/*/tests/violations/`. Since project crates use clean names (`domain`, `infrastructure`), the `.stderr` files in the templates use these names and work without modification. After copy, they are project-owned.
 
-**Update verification:** After every update, `cargo check --workspace` runs. Failure triggers rollback via `git checkout HEAD -- .ckeletin/` and an error message showing what broke.
+**Update verification:** The shipped two-tier gate:
+- Tier 1: `cargo check --workspace` — compile failure triggers rollback via `git restore --source=HEAD --staged --worktree -- .ckeletin/` (wholesale restore, including removal of added files). Emits `CKELETIN_UPDATE_RESULT={"status":"compile_failed",...,"rolled_back":true}`.
+- Tier 2: `just check` — if lints/tests fail the update is left in the working tree for manual fix-forward. Emits `CKELETIN_UPDATE_RESULT={"status":"check_failed",...}`.
+- Success: committed and emits `CKELETIN_UPDATE_RESULT={"status":"updated",...}`.
 
-**Migration verification:** After migration, `just check` (full suite: fmt, clippy, tests, deny) runs. A dry-run mode is available to preview changes before applying.
+**Migration verification:** Deferred — see §Migration Flow.
 
-**Framework health in CI:** `just check` includes `ckeletin-health`, which detects local modifications to `.ckeletin/`. CI pipelines that run `just check` automatically catch framework tampering.
+**Framework health in CI:** `just check` includes `ckeletin-health`. When the workspace does not compile, `ckeletin-health` exits non-zero, causing `just check` to fail. A dirty `.ckeletin/` emits a WARNING (non-fatal) because in CI the checkout is always clean by construction — the warning is for local developer awareness.
 
 ## Future: Publishing to crates.io
 

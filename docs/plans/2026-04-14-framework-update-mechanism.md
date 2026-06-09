@@ -1,6 +1,15 @@
 # Framework Update Mechanism Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS: IMPLEMENTED** — This plan was executed and shipped as `.ckeletin/`
+> framework v0.2.x (init/update/health flows working as of the initial
+> restructuring commit). This file is a **historical record only**. Do NOT
+> execute it again — the scaffold already has `.ckeletin/` and running init
+> would reset it. The unchecked boxes below reflect that the plan was
+> implemented without tracking completion in this file, not that the work
+> is undone. See `docs/specs/2026-04-14-framework-update-mechanism.md` for
+> the current design state including which items remain deferred.
+
+> ~~**For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.~~
 
 **Goal:** Restructure ckeletin-rust so framework code lives in `.ckeletin/`, project crates have clean names, and `init`/`update`/`migrate` flows work.
 

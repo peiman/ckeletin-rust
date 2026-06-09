@@ -1,5 +1,79 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Fixed
+- **`ckeletin-update` apply is now wholesale replacement** (HIGH). Replaced
+  `git checkout <ref> -- .ckeletin/` with `git restore --source=<ref>
+  --staged --worktree -- .ckeletin/`, which also deletes files absent from
+  the source ref. Previously, files deleted upstream persisted forever in
+  consumers. Regression test: `update_deletes_files_removed_upstream` in
+  `.ckeletin/crate/tests/update_mechanism.rs`.
+- **Rollback/restore no longer leaves upstream-added files staged** (HIGH).
+  Both the tier-1 rollback in `ckeletin-update` and the `restore()` trap in
+  `ckeletin-update-check-compatibility` now use `git restore --source=HEAD
+  --staged --worktree -- .ckeletin/`. Previously `git checkout HEAD --
+  .ckeletin/` left staged-but-uncommitted files behind, breaking the
+  `rolled_back:true` machine verdict and the `just check` preflight for a
+  subsequent update. Regression tests:
+  `check_compatibility_leaves_no_staged_files` and
+  `update_compile_fail_rolls_back_cleanly`.
+- **Tag-pinned updates now work** (MEDIUM). `ckeletin-update version=<tag>`
+  previously tried `git restore --source=ckeletin-upstream/<tag>` which is
+  an invalid ref form for tags. Fix: fetch the tag explicitly with
+  `git fetch ckeletin-upstream "<tag>"` then use `FETCH_HEAD`, mirroring
+  `ckeletin-update-check-compatibility`'s existing approach. Regression test:
+  `update_with_explicit_tag_works`.
+- **`ckeletin-health` exits non-zero on a BROKEN workspace** (MEDIUM). The
+  `|| echo "Workspace: BROKEN"` construct previously swallowed the exit code.
+  `just check` now actually gates on a broken workspace. Regression tests:
+  `health_exits_zero_on_clean_tree` and `health_exits_nonzero_on_broken_workspace`.
+- **`ckeletin-check-update` has the upstream self-guard** (LOW). Consistent
+  with `ckeletin-update`, `-dry-run`, and `-check-compatibility`.
+- **`ckeletin-doctor` JSON now includes `components.rustfmt` and
+  `components.clippy`** (LOW), with text/JSON parity verified by
+  `doctor_json_and_text_report_same_components` in
+  `.ckeletin/crate/tests/doctor.rs`.
+- **`just init` now refuses on already-initialized repos** (MEDIUM). The
+  guard checks for the upstream slug `peiman/ckeletin-rust` in `Cargo.toml`;
+  if absent, `init` exits with a clear message. Override with `force=true`.
+  Previously `just init` silently ran `rm -rf .git` on a consumer repo.
+- **`just init` dirty-tree preflight now catches staged changes** (LOW).
+  Added `--cached` to the `git diff` check so staged-but-not-committed
+  changes are not silently discarded.
+- **`just init` compile-check moved before `rm -rf .git`** (LOW). The
+  verification now runs BEFORE destroying git history; a compile failure
+  leaves the repo intact.
+- **`{{name}}` quoted in root `init` recipe** (LOW). Prevents shell
+  word-splitting for names that pass init.sh's alphanumeric validation.
+- **Dead `binary_name` variable removed** from root `Justfile` (LOW). It
+  was declared but never consumed; init.sh no longer rewrites it.
+- **Stale comment in `init_smoke.rs` corrected** (LOW/INFO). The comment
+  now correctly reflects that init.sh uses `--all-targets` (not just
+  lib+bin).
+
+### Added
+- **Hermetic update-mechanism test suite** at
+  `.ckeletin/crate/tests/update_mechanism.rs`: four fixture-based tests
+  covering wholesale-replacement, rollback correctness, tag-pinned updates,
+  and the CKELETIN_UPDATE_RESULT machine contract.
+- **`ckeletin-health` exit-code tests** at
+  `.ckeletin/crate/tests/health.rs`.
+- **CI=true guard on tool-presence skips**: guard tests in
+  `update_guard.rs` and all new test files now `panic!` (instead of
+  silently returning) when `CI=true` and required tools are absent.
+- **LICENSE reminder in `init.sh`** output: one-line notice to update the
+  copyright holder/year in LICENSE files before distributing.
+
+### Docs
+- `docs/specs/2026-04-14-framework-update-mechanism.md`: status updated to
+  "Shipped"; §Migration Flow and §Version Compatibility and Migrations marked
+  **Deferred** with rationale (Principle 4 — Lean Iteration); §Testing
+  Strategy updated to reflect the actual two-tier gate and the `git restore`
+  rollback; `ckeletin-health` CI claim corrected.
+- `docs/plans/2026-04-14-framework-update-mechanism.md`: status banner added
+  ("IMPLEMENTED — historical record; do not execute").
+
 ## [0.2.17] - 2026-06-10
 
 ### Fixed
