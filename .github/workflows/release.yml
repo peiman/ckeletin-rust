@@ -39,6 +39,31 @@ jobs:
       - name: Conformance gate (must be green to release)
         run: just conform
 
+      # Tag-version reconciliation gate: the pushed tag (vX.Y.Z) must equal the
+      # cli package's CARGO_PKG_VERSION baked into the binary. Prevents the
+      # repo-history incident where tag v0.2.0 was cut from package version 0.1.0.
+      # Tag-namespace note: future ckeletin framework pins may use a ckeletin-v*
+      # prefix to distinguish them from binary release tags (v*) — that separation
+      # is policy; this gate only enforces binary release tags.
+      - name: Verify tag matches CARGO_PKG_VERSION
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="cli") | .version')
+          if [ -z "$PKG_VERSION" ]; then
+            echo "ERROR: could not resolve cli package version from cargo metadata" >&2
+            exit 1
+          fi
+          echo "Tag version:     $TAG"
+          echo "Package version: $PKG_VERSION"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "ERROR: git tag v${TAG} does not match cli package version ${PKG_VERSION}." >&2
+            echo "       Update Cargo.toml [workspace.package] version to ${TAG} before tagging." >&2
+            exit 1
+          fi
+          echo "OK: tag matches package version."
+
   publish:
     name: Publish release
     needs: conform
