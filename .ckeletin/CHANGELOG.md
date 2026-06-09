@@ -1,5 +1,40 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Reachable panic on audit-log permission failure.** `prepare_file_appender`
+  now uses `RollingFileAppender::builder().build()` (returns `Result`) instead
+  of `tracing_appender::rolling::daily` (panics on file-creation failure).
+  A chmod-555 directory previously caused exit 101 with a raw backtrace; it
+  now flows to the clean error envelope + exit 1 path. (#finding-1)
+- **Invalid log-level strings now produce a typed startup error.** Previously
+  `build_filter` silently fell back to the default level, so
+  `CKELETIN_LOG_FILE_LEVEL=info` (a plausible noise-reduction setting)
+  silently emptied the audit stream by filtering out DEBUG shadow-log events.
+  `validate_level` now rejects non-level strings at init time. "off" remains
+  valid for JSON-mode stderr suppression. (#finding-3)
+- **Empty `log_file_path` now errors explicitly.** An empty string previously
+  scattered audit files outside the app directory; it now returns a clear
+  `io::Error` instead of silently misbehaving. (#finding-7)
+- **Shadow-log events emitted after the write, not before.** `Output::success`,
+  `::message`, and `::error` previously emitted the audit tracing event before
+  the write, so a failed write (e.g. broken pipe) produced a misleading
+  `output.success` record for a run that never delivered output.
+  Events are now emitted only after a successful write. (#finding-8)
+- **Audit log directory created with mode 0700, files with 0600 (Unix).**
+  Previously the directory and files were world-readable (0755/0644 via umask
+  default). Every byte a downstream command renders lands in the audit file by
+  design; narrowed permissions protect per-user audit contents. (#finding-5)
+- **`process::run_capture` now captures child stderr.** Failures previously
+  reported only "exited with status N"; child stderr diagnostics are now
+  included in the error message. (#finding-11)
+
+### Changed
+- First-run audit notice now names the log directory and filename pattern
+  (`app.log.<date>`) instead of a single file path that never exists (the
+  daily roller always appends a date suffix). (#finding-6)
+
 ## [0.2.18] - 2026-06-10
 
 ### Fixed
