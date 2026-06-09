@@ -3,8 +3,9 @@ pre-commit:
   parallel: true
   commands:
     fmt:
-      run: cargo fmt --all -- --check
-      fail_text: "Code not formatted. Run: cargo fmt --all"
+      # SSOT: route through just so pre-commit and `just check` enforce the same recipe.
+      run: just ckeletin-fmt-check
+      fail_text: "Code not formatted. Run: just fmt"
     clippy:
       # SSOT: run the framework's hardened clippy recipe (security/correctness
       # lints + -D warnings) so pre-commit and `just check` enforce the same set.
@@ -21,8 +22,12 @@ commit-msg:
   commands:
     conventional:
       run: |
-        MSG=$(cat {1})
-        if ! echo "$MSG" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+"; then
+        # Read only the first line (subject) — multi-line bodies must not be
+        # tested against the conventional-commit pattern or a body line that
+        # happens to start with a word like "fix" will produce a false match /
+        # the inverse: a body without a prefix causes false rejection.
+        SUBJECT=$(head -1 {1})
+        if ! echo "$SUBJECT" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+"; then
           echo "Commit message must follow Conventional Commits format"
           echo "Examples: feat: add ping command, fix: handle empty config"
           exit 1
