@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.20] - 2026-06-10
 
 ### Added
 - **Dependency allowlist invariant tests** (`.ckeletin/crate/tests/arch_allowlist.rs`):
