@@ -9,21 +9,24 @@ use std::process::Command;
 
 /// Runs a command and captures its stdout as a trimmed string.
 ///
-/// Stderr is suppressed (piped to null). Returns an `io::Error` if the command
-/// cannot be found or fails to execute. A non-zero exit code is reported as an
+/// Stderr is captured (not suppressed) and included in the error message on
+/// failure, so callers and users see WHY the command failed rather than just
+/// "exited with status N". Returns an `io::Error` if the command cannot be
+/// found or fails to execute. A non-zero exit code is reported as an
 /// `io::Error` with `ErrorKind::Other`.
 pub fn run_capture(cmd: &str, args: &[&str]) -> Result<String, io::Error> {
-    let output = Command::new(cmd)
-        .args(args)
-        .stderr(std::process::Stdio::null())
-        .output()?;
+    let output = Command::new(cmd).args(args).output()?;
 
     if !output.status.success() {
-        return Err(io::Error::other(format!(
-            "{} exited with status {}",
-            cmd,
-            output.status.code().unwrap_or(-1)
-        )));
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        let msg = if stderr.is_empty() {
+            format!("{cmd} exited with status {code}")
+        } else {
+            format!("{cmd} exited with status {code}: {stderr}")
+        };
+        return Err(io::Error::other(msg));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -70,6 +73,22 @@ mod tests {
     fn run_capture_failing_command() {
         let result = run_capture("false", &[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_capture_includes_stderr_in_error_on_failure() {
+        // When a child process fails, its stderr diagnostic must appear in
+        // the error message so callers and users see WHY it failed — not just
+        // "exited with status N".
+        //
+        // sh -c 'echo DIAG >&2; exit 1' produces known stderr output.
+        let result = run_capture("sh", &["-c", "echo DIAG_FROM_STDERR >&2; exit 1"]);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("DIAG_FROM_STDERR"),
+            "error message must include child stderr, got: {msg}"
+        );
     }
 
     #[test]
