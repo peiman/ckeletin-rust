@@ -8,6 +8,7 @@ const REQUIREMENTS_JSON_URL: &str =
     "https://raw.githubusercontent.com/peiman/ckeletin/main/spec/requirements.json";
 const VENDORED_REQUIREMENTS: &str = "conformance/requirements.json";
 const PUBLISHED_REPORT: &str = "conformance-report.json";
+const CONFORMANCE_MD: &str = "CONFORMANCE.md";
 
 #[derive(Deserialize)]
 struct SpecManifest {
@@ -126,10 +127,20 @@ fn load_spec_requirements(refresh: bool, json_mode: bool) -> (Vec<String>, Strin
                 (ids, manifest.spec_version)
             }
             Err(fetch_err) => {
-                eprintln!(
-                    "Error: --refresh requested but could not fetch upstream spec: {fetch_err}"
+                let msg = format!(
+                    "--refresh requested but could not fetch upstream spec: {fetch_err} (URL: {REQUIREMENTS_JSON_URL})"
                 );
-                eprintln!("  URL: {REQUIREMENTS_JSON_URL}");
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({ "status": "error", "error": msg })
+                        )
+                        .unwrap()
+                    );
+                } else {
+                    eprintln!("Error: {msg}");
+                }
                 std::process::exit(1);
             }
         }
@@ -140,8 +151,20 @@ fn load_spec_requirements(refresh: bool, json_mode: bool) -> (Vec<String>, Strin
                 (ids, manifest.spec_version)
             }
             Err(vendor_err) => {
-                eprintln!("Error: cannot read vendored spec {VENDORED_REQUIREMENTS}: {vendor_err}");
-                eprintln!("  Run `cargo run -p ckeletin-conform -- --refresh` (or `just conform-refresh`) to fetch it.");
+                let msg = format!(
+                    "cannot read vendored spec {VENDORED_REQUIREMENTS}: {vendor_err}. Run `cargo run -p ckeletin-conform -- --refresh` (or `just conform-refresh`) to fetch it."
+                );
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({ "status": "error", "error": msg })
+                        )
+                        .unwrap()
+                    );
+                } else {
+                    eprintln!("Error: {msg}");
+                }
                 std::process::exit(1);
             }
         }
@@ -176,6 +199,20 @@ fn find_unmapped(
         .collect()
 }
 
+/// CKSPEC-ENF-005 (reverse): requirement IDs present in the mapping but absent
+/// from the spec. Extra entries inflate totals and indicate a stale or invented
+/// requirement ID — a hard failure, not a silent pass.
+fn find_extra(
+    expected_ids: &[String],
+    mapping: &BTreeMap<String, RequirementMapping>,
+) -> Vec<String> {
+    mapping
+        .keys()
+        .filter(|id| !expected_ids.contains(id))
+        .cloned()
+        .collect()
+}
+
 /// CKSPEC-ENF-006: an enforcement claim above honor-system/design MUST carry a
 /// violation test or violation_evidence. Returns true when that proof is
 /// missing (which the generator surfaces as an ENF-007 feedback signal).
@@ -203,6 +240,114 @@ fn lacks_anchor(req: &RequirementMapping) -> bool {
             .unwrap_or("")
             .trim()
             .is_empty()
+}
+
+/// Dangling anchor check: for every evidence string that names a file path
+/// (contains `/` and ends in a known source extension or is a plain path),
+/// verify the file exists. For paths containing `::` (e.g. `file.rs::fn_name`),
+/// also verify the symbol name appears in the file. Returns a list of
+/// (requirement_id, problem_description) pairs for dangling anchors.
+///
+/// Heuristics used to identify file-path anchors:
+/// - The token contains a `/`
+/// - The token ends in `.rs`, `.toml`, `.yaml`, `.yml`, `.json`, `.md`, or `.txt`
+/// - The token does NOT start with `http`
+/// - The token starts with a word char (not a sentence fragment)
+fn find_dangling_anchors(mapping: &BTreeMap<String, RequirementMapping>) -> Vec<(String, String)> {
+    let mut dangling = Vec::new();
+
+    for (req_id, req) in mapping {
+        let anchors = collect_path_anchors(req);
+        for anchor in anchors {
+            let (file_part, symbol_part) = split_anchor(&anchor);
+            let path = std::path::Path::new(file_part);
+            if !path.exists() {
+                dangling.push((
+                    req_id.clone(),
+                    format!("evidence anchor path not found: {file_part}"),
+                ));
+            } else if let Some(symbol) = symbol_part {
+                // File exists — verify the symbol appears in it.
+                match std::fs::read_to_string(path) {
+                    Ok(content) => {
+                        if !content.contains(symbol) {
+                            dangling.push((
+                                req_id.clone(),
+                                format!(
+                                    "evidence anchor symbol `{symbol}` not found in {file_part}"
+                                ),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        dangling.push((
+                            req_id.clone(),
+                            format!("evidence anchor file {file_part} unreadable: {e}"),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    dangling
+}
+
+/// Collect all file-path-shaped tokens from evidence fields of a requirement.
+fn collect_path_anchors(req: &RequirementMapping) -> Vec<String> {
+    let mut anchors = Vec::new();
+    for source in [
+        req.evidence.as_str(),
+        req.violation_evidence.as_deref().unwrap_or(""),
+    ] {
+        for token in tokenize_anchors(source) {
+            anchors.push(token);
+        }
+    }
+    for vt in &req.violation_tests {
+        anchors.push(vt.clone());
+    }
+    anchors
+}
+
+/// Extract file-path tokens from a freeform text string.
+/// A token is considered a file path when it:
+///   - contains `/`
+///   - ends in `.rs`, `.toml`, `.yaml`, `.yml`, `.json`, `.md`, `.txt`
+///   - does NOT start with `http`
+fn tokenize_anchors(text: &str) -> Vec<String> {
+    let extensions = [".rs", ".toml", ".yaml", ".yml", ".json", ".md", ".txt"];
+    let mut tokens = Vec::new();
+    // Split on whitespace and common punctuation that wouldn't be in a path.
+    for raw in text.split(|c: char| {
+        c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '\'' | '"' | '[' | ']')
+    }) {
+        // Strip trailing punctuation only — preserve leading dots (e.g. `.ckeletin/`
+        // is a valid path prefix and must not be stripped to `ckeletin/`).
+        let token = raw
+            .trim_end_matches(['.', ':', '`'])
+            .trim_start_matches('`');
+        if token.starts_with("http") {
+            continue;
+        }
+        if token.contains('/') && extensions.iter().any(|ext| token.ends_with(ext)) {
+            tokens.push(token.to_string());
+        }
+    }
+    tokens
+}
+
+/// Split `file.rs::symbol` into (`file.rs`, Some(`symbol`)).
+/// Returns (`anchor`, None) when there is no `::` separator.
+fn split_anchor(anchor: &str) -> (&str, Option<&str>) {
+    if let Some(pos) = anchor.rfind("::") {
+        let file = &anchor[..pos];
+        // Only treat it as a symbol reference when the file part ends in .rs
+        if file.ends_with(".rs") {
+            return (file, Some(&anchor[pos + 2..]));
+        }
+    }
+    (anchor, None)
 }
 
 // ── Published report (CKSPEC-ENF-010) ───────────────────────────
@@ -283,6 +428,64 @@ fn project_report(mapping: &Mapping, implementation: String) -> PublishedReport 
     }
 }
 
+/// Parse the stated spec version and requirement count from CONFORMANCE.md's
+/// header line. Looks for "Spec v<version>" and "N requirements" patterns.
+/// Returns (spec_version, requirement_count) or an error string.
+fn parse_conformance_md_header(path: &str) -> Result<(String, usize), String> {
+    let content = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+
+    // Match the first line containing "Spec v" (e.g. "Ckeletin Spec v0.8.0")
+    let spec_version = content
+        .lines()
+        .find_map(|line| {
+            // Look for "Spec v<semver>" pattern
+            let lower = line.to_lowercase();
+            if lower.contains("spec v") {
+                // Extract the version token following "v"
+                let pos = line.to_lowercase().find("spec v")? + "spec v".len();
+                let rest = &line[pos..];
+                let ver: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                if ver.is_empty() {
+                    None
+                } else {
+                    Some(ver)
+                }
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| format!("{path}: could not find 'Spec v<version>' in header"))?;
+
+    // Match "N requirements" (e.g. "40 requirements")
+    let req_count = content
+        .lines()
+        .find_map(|line| {
+            // Look for "<N> requirements" on a header line
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            for (i, word) in parts.iter().enumerate() {
+                if (*word == "requirements"
+                    || *word == "requirements,"
+                    || word.starts_with("requirements"))
+                    && i > 0
+                {
+                    if let Ok(n) = parts[i - 1]
+                        .trim_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<usize>()
+                    {
+                        return Some(n);
+                    }
+                }
+            }
+            None
+        })
+        .ok_or_else(|| format!("{path}: could not find 'N requirements' in header"))?;
+
+    Ok((spec_version, req_count))
+}
+
 fn main() {
     let json_mode = std::env::args().any(|a| a == "--json");
     // `--refresh` fetches the latest spec from upstream and rewrites the
@@ -297,7 +500,18 @@ fn main() {
     let mapping_content = match std::fs::read_to_string("conformance-mapping.toml") {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error: cannot read conformance-mapping.toml: {e}");
+            let msg = format!("cannot read conformance-mapping.toml: {e}");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "status": "error", "error": msg })
+                    )
+                    .unwrap()
+                );
+            } else {
+                eprintln!("Error: {msg}");
+            }
             std::process::exit(1);
         }
     };
@@ -305,7 +519,18 @@ fn main() {
     let mapping: Mapping = match toml::from_str(&mapping_content) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("Error: invalid mapping file: {e}");
+            let msg = format!("invalid mapping file: {e}");
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "status": "error", "error": msg })
+                    )
+                    .unwrap()
+                );
+            } else {
+                eprintln!("Error: {msg}");
+            }
             std::process::exit(1);
         }
     };
@@ -337,21 +562,44 @@ fn main() {
         std::process::exit(1);
     }
 
-    // ── ENF-005: Completeness check ─────────────────────────────
+    // ── ENF-005: Completeness check (both directions) ──────────
+    // Forward: spec IDs not in mapping.
     let missing = find_unmapped(&expected_ids, &mapping.requirements);
-
     if !missing.is_empty() {
+        let msg = format!(
+            "unmapped requirements (CKSPEC-ENF-005 violation): {}",
+            missing.join(", ")
+        );
         if json_mode {
-            let err = serde_json::json!({
-                "status": "error",
-                "error": format!("unmapped requirements: {}", missing.join(", ")),
-            });
-            println!("{}", serde_json::to_string_pretty(&err).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "status": "error", "error": msg })
+                )
+                .unwrap()
+            );
         } else {
-            eprintln!("FAILED — unmapped requirements (CKSPEC-ENF-005 violation):");
-            for m in &missing {
-                eprintln!("  - {m}");
-            }
+            eprintln!("FAILED — {msg}");
+        }
+        std::process::exit(1);
+    }
+    // Reverse: mapping IDs not in spec (extra/stale entries inflate totals).
+    let extra = find_extra(&expected_ids, &mapping.requirements);
+    if !extra.is_empty() {
+        let msg = format!(
+            "mapping contains entries not in the spec (stale/invented requirement IDs): {}",
+            extra.join(", ")
+        );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({ "status": "error", "error": msg })
+                )
+                .unwrap()
+            );
+        } else {
+            eprintln!("FAILED — {msg}");
         }
         std::process::exit(1);
     }
@@ -386,6 +634,95 @@ fn main() {
             );
         }
         std::process::exit(1);
+    }
+
+    // ── Dangling anchor check ────────────────────────────────────
+    // Every evidence anchor that names a file path must exist on disk. An anchor
+    // of the form `file.rs::symbol` additionally requires that `symbol` appears
+    // in the file. Dangling anchors are a hard failure so stale evidence cannot
+    // be published.
+    let dangling = find_dangling_anchors(&mapping.requirements);
+    if !dangling.is_empty() {
+        let lines: Vec<String> = dangling
+            .iter()
+            .map(|(id, msg)| format!("  {id}: {msg}"))
+            .collect();
+        let summary = format!(
+            "dangling evidence anchors found ({} problem(s))",
+            dangling.len()
+        );
+        if json_mode {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "status": "error",
+                    "error": summary,
+                    "details": dangling.iter().map(|(id, msg)| format!("{id}: {msg}")).collect::<Vec<_>>()
+                }))
+                .unwrap()
+            );
+        } else {
+            eprintln!("FAILED — {summary}:");
+            for line in &lines {
+                eprintln!("{line}");
+            }
+        }
+        std::process::exit(1);
+    }
+
+    // ── CONFORMANCE.md header sync check ────────────────────────
+    // CONFORMANCE.md must declare the same spec version as the mapping, and its
+    // stated requirement count must match the spec's count. This prevents the
+    // prose from silently falling behind a spec bump (the incident that prompted
+    // this gate).
+    if !write_report {
+        match parse_conformance_md_header(CONFORMANCE_MD) {
+            Ok((md_version, md_count)) => {
+                let mut header_errors: Vec<String> = Vec::new();
+                if md_version != mapping.spec_version {
+                    header_errors.push(format!(
+                        "{CONFORMANCE_MD} states spec v{md_version} but mapping targets spec {}; update the prose header",
+                        mapping.spec_version
+                    ));
+                }
+                let expected_count = expected_ids.len();
+                if md_count != expected_count {
+                    header_errors.push(format!(
+                        "{CONFORMANCE_MD} states {md_count} requirements but spec has {expected_count}; update the prose header"
+                    ));
+                }
+                if !header_errors.is_empty() {
+                    let msg = header_errors.join("; ");
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(
+                                &serde_json::json!({ "status": "error", "error": msg })
+                            )
+                            .unwrap()
+                        );
+                    } else {
+                        eprintln!("FAILED — {msg}");
+                    }
+                    std::process::exit(1);
+                }
+            }
+            Err(e) => {
+                let msg = format!("CONFORMANCE.md header parse failed: {e}");
+                if json_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(
+                            &serde_json::json!({ "status": "error", "error": msg })
+                        )
+                        .unwrap()
+                    );
+                } else {
+                    eprintln!("FAILED — {msg}");
+                }
+                std::process::exit(1);
+            }
+        }
     }
 
     // ── ENF-010: Published report (write, or sync-check vs mapping) ──
@@ -436,15 +773,24 @@ fn main() {
         let mut check_results = Vec::new();
         let mut vtest_results = Vec::new();
 
-        // Run checks
+        // Run checks — capture output on failure so the user can diagnose it.
         for check_cmd in &req.checks {
-            let passed = run_check(check_cmd);
+            let (passed, failure_output) = run_check(check_cmd);
             if !passed {
                 failed_checks += 1;
             }
             if !json_mode {
                 let icon = if passed { "ok" } else { "FAIL" };
                 println!("  {req_id:<20} {check_cmd} ... {icon}");
+                if !passed {
+                    if let Some(out) = &failure_output {
+                        if !out.trim().is_empty() {
+                            for line in out.lines() {
+                                println!("    | {line}");
+                            }
+                        }
+                    }
+                }
             }
             check_results.push(CheckResult {
                 command: check_cmd.clone(),
@@ -493,7 +839,7 @@ fn main() {
     }
 
     let total = mapping.requirements.len();
-    let today = chrono_free_date();
+    let today = current_date();
 
     let report = Report {
         implementation: detect_implementation_name(),
@@ -563,15 +909,24 @@ fn main() {
     }
 }
 
-fn run_check(cmd: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// Run a shell check and return (passed, Option<combined output on failure>).
+/// Output is captured so failures can surface their diagnostic text.
+fn run_check(cmd: &str) -> (bool, Option<String>) {
+    match Command::new("sh").arg("-c").arg(cmd).output() {
+        Ok(output) => {
+            if output.status.success() {
+                (true, None)
+            } else {
+                let combined = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                (false, Some(combined))
+            }
+        }
+        Err(e) => (false, Some(format!("failed to spawn: {e}"))),
+    }
 }
 
 /// Detect project name from the [[bin]] name in crates/cli/Cargo.toml.
@@ -595,13 +950,22 @@ fn detect_implementation_name() -> String {
         .to_string()
 }
 
-/// Simple date without chrono dependency.
-fn chrono_free_date() -> String {
-    let output = Command::new("date")
+/// Get the current date in YYYY-MM-DD format without the chrono dependency.
+/// Falls back to "unknown" rather than panicking if `date` is unavailable.
+fn current_date() -> String {
+    Command::new("date")
         .arg("+%Y-%m-%d")
         .output()
-        .expect("date command failed");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+        .ok()
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg(test)]
@@ -632,6 +996,23 @@ mod tests {
         let expected = vec!["CKSPEC-ARCH-001".to_string()];
         let mapping = mapping_with(&["CKSPEC-ARCH-001"]);
         assert!(find_unmapped(&expected, &mapping).is_empty());
+    }
+
+    // ── ENF-005 reverse: extra mapping entries (unknown IDs) fail ──
+
+    #[test]
+    fn find_extra_flags_a_mapping_entry_not_in_the_spec() {
+        let expected = vec!["CKSPEC-ARCH-001".to_string()];
+        let mapping = mapping_with(&["CKSPEC-ARCH-001", "CKSPEC-INVENTED-999"]);
+        let extra = find_extra(&expected, &mapping);
+        assert_eq!(extra, vec!["CKSPEC-INVENTED-999".to_string()]);
+    }
+
+    #[test]
+    fn find_extra_is_empty_when_all_mapping_entries_are_in_spec() {
+        let expected = vec!["CKSPEC-ARCH-001".to_string(), "CKSPEC-OUT-001".to_string()];
+        let mapping = mapping_with(&["CKSPEC-ARCH-001", "CKSPEC-OUT-001"]);
+        assert!(find_extra(&expected, &mapping).is_empty());
     }
 
     // ── ENF-006: proof requirement catches an unproven above-honor claim ──
@@ -720,6 +1101,110 @@ mod tests {
             ..Default::default()
         };
         assert!(!lacks_anchor(&deferred));
+    }
+
+    // ── Dangling anchor gate ────────────────────────────────────
+
+    #[test]
+    fn dangling_anchor_detects_nonexistent_file_path() {
+        let mut mapping = BTreeMap::new();
+        mapping.insert(
+            "CKSPEC-TEST-999".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                evidence: "crates/domain/tests/nonexistent_fixture.rs".to_string(),
+                violation_evidence: Some(
+                    "Structural: see crates/domain/tests/nonexistent_fixture.rs".to_string(),
+                ),
+                ..Default::default()
+            },
+        );
+        let dangling = find_dangling_anchors(&mapping);
+        // Both evidence and violation_evidence mention the nonexistent path
+        assert!(
+            !dangling.is_empty(),
+            "a nonexistent file path in evidence must be reported as dangling"
+        );
+        assert!(
+            dangling.iter().any(|(id, _)| id == "CKSPEC-TEST-999"),
+            "the dangling anchor must be attributed to the correct requirement"
+        );
+    }
+
+    #[test]
+    fn dangling_anchor_passes_for_existing_file() {
+        // Use a file we know exists in the repo
+        let mut mapping = BTreeMap::new();
+        mapping.insert(
+            "CKSPEC-TEST-998".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                evidence: "Cargo.toml".to_string(), // no slash, not picked as anchor
+                checks: vec!["test -f Cargo.toml".to_string()],
+                ..Default::default()
+            },
+        );
+        let dangling = find_dangling_anchors(&mapping);
+        assert!(
+            dangling.is_empty(),
+            "a non-path evidence string must not be flagged"
+        );
+    }
+
+    #[test]
+    fn dangling_anchor_violation_test_path_is_checked() {
+        let mut mapping = BTreeMap::new();
+        mapping.insert(
+            "CKSPEC-TEST-997".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                violation_tests: vec![
+                    "crates/domain/tests/violations/dangling_does_not_exist.rs".to_string()
+                ],
+                violation_evidence: Some("trybuild tests".to_string()),
+                ..Default::default()
+            },
+        );
+        let dangling = find_dangling_anchors(&mapping);
+        assert!(
+            dangling
+                .iter()
+                .any(|(_, msg)| msg.contains("dangling_does_not_exist.rs")),
+            "a nonexistent violation_test path must be reported as dangling"
+        );
+    }
+
+    // ── CONFORMANCE.md header parse ─────────────────────────────
+
+    #[test]
+    fn conformance_md_header_parse_extracts_version_and_count() {
+        // Write a temp file with a known header
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        std::fs::write(&path, "# Ckeletin Spec v0.8.0 — Rust Conformance Report\n\n**Total:** 40 requirements — 40 met\n").unwrap();
+        let (ver, count) = parse_conformance_md_header(&path).unwrap();
+        assert_eq!(ver, "0.8.0");
+        assert_eq!(count, 40);
+    }
+
+    #[test]
+    fn conformance_md_header_parse_rejects_missing_version() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        std::fs::write(&path, "# Some report\n\n**Total:** 40 requirements\n").unwrap();
+        assert!(parse_conformance_md_header(&path).is_err());
+    }
+
+    #[test]
+    fn conformance_md_header_parse_rejects_missing_count() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        std::fs::write(
+            &path,
+            "# Ckeletin Spec v0.8.0 — Rust Conformance\n\nNo count here.\n",
+        )
+        .unwrap();
+        assert!(parse_conformance_md_header(&path).is_err());
     }
 
     // ── ENF-010: deterministic published report ─────────────────
