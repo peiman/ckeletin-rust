@@ -12,15 +12,26 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+# Least-privilege default: jobs that need more declare it explicitly.
+permissions:
+  contents: read
+
+# Cancel in-flight runs for the same ref so stale PR runs don't waste runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 # Tool versions are PINNED, not floating: `cargo install <tool> --locked` only
 # pins the tool's own dependencies, NOT the tool version, so a breaking release
 # of just/cargo-deny/cargo-llvm-cov would otherwise break CI with no change
-# here. Bumping these is a deliberate, reviewable edit (kept fresh by Dependabot).
+# here. Bumping these is a deliberate, reviewable edit. Action SHAs are kept
+# fresh by Dependabot (github-actions ecosystem, weekly schedule).
 # The Rust toolchain is pinned via rust-toolchain.toml and @1.96.0 below so the
-# version-sensitive trybuild snapshots stay stable.
+# version-sensitive trybuild snapshots stay stable. It is intentionally excluded
+# from Dependabot auto-bumps — see dependabot.yml for the rationale.
 
 jobs:
   advisories:
@@ -30,7 +41,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
@@ -50,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
@@ -58,7 +69,7 @@ jobs:
         run: cargo install just --version 1.50.0 --locked
 
       - name: Install cargo-geiger
-        run: cargo install cargo-geiger --locked
+        run: cargo install cargo-geiger --version 0.13.0 --locked
 
       - name: Report unsafe surface
         run: just ckeletin-geiger
@@ -68,7 +79,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -76,7 +87,7 @@ jobs:
           components: clippy, rustfmt, llvm-tools-preview
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -105,13 +116,13 @@ jobs:
     if: github.repository == 'peiman/ckeletin-rust' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -135,7 +146,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -143,7 +154,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -168,13 +179,13 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -196,7 +207,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0 # full history so `gitleaks git` scans every commit
 
@@ -217,13 +228,13 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Pinned to match rust-toolchain.toml so the dep graph resolves identically.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -238,14 +249,22 @@ jobs:
         run: cargo install just --version 1.50.0 --locked
 
       - name: Install grype
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+        run: |
+          # Pinned release + checksum-verified — no piping from a moving branch.
+          GRYPE_VERSION=0.114.0
+          ARCHIVE="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${ARCHIVE}" \
+            -o "/tmp/${ARCHIVE}"
+          echo "edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343  /tmp/${ARCHIVE}" \
+            | sha256sum --check --quiet
+          tar -xz -C /usr/local/bin -f "/tmp/${ARCHIVE}" grype
 
       - name: Generate + scan SBOM (fails on High+)
         run: just ckeletin-sbom-scan
 
       - name: Upload SBOM artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
