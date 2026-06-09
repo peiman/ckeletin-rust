@@ -131,9 +131,14 @@ mod tests {
 
     #[test]
     fn load_returns_defaults_when_no_file() {
-        let config = Config::load(None, TEST_PREFIX).unwrap();
-        assert_eq!(config.log_level, "info");
-        assert!(!config.json);
+        // Use Jail to ensure there is no config.toml in cwd, even when other
+        // Jail tests run in parallel and temporarily change the working directory.
+        Jail::expect_with(|_jail| {
+            let config = load_in_jail(None, TEST_PREFIX)?;
+            assert_eq!(config.log_level, "info");
+            assert!(!config.json);
+            Ok(())
+        });
     }
 
     #[test]
