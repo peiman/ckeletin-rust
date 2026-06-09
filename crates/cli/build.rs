@@ -10,10 +10,28 @@ fn main() {
     // Rebuild when HEAD or the index moves, so the baked identity stays honest.
     // `--git-path` resolves the real location even through worktree/submodule
     // indirection (where `.git` is a file, not a directory).
+    //
+    // Fallback for no-git builds (e.g. `just init` runs `cargo check` BEFORE
+    // `git init`): when `--git-path` fails, emit a rerun trigger for the
+    // conventional workspace-root path. cargo treats a missing
+    // `rerun-if-changed` path as always-dirty, so the script reruns on the
+    // next build — including the one after `git init` creates the .git dir.
+    // Trade-off: non-git tarball installs also trigger a rerun each build, but
+    // since the emitted env vars don't change (still "unknown"), cargo does NOT
+    // recompile the crate itself — only this cheap script re-executes.
+    let mut found_git = false;
     for p in ["HEAD", "index"] {
         if let Some(path) = git(&["rev-parse", "--git-path", p]) {
             println!("cargo:rerun-if-changed={path}");
+            found_git = true;
         }
+    }
+    if !found_git {
+        // No .git yet (e.g. scaffold init before `git init`). Point at the
+        // expected location relative to this crate (crates/cli → ../../.git).
+        // Once `git init` creates the file, the next build reruns this script
+        // and bakes the real commit SHA.
+        println!("cargo:rerun-if-changed=../../.git/HEAD");
     }
     println!("cargo:rerun-if-changed=build.rs");
 
