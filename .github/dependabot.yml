@@ -3,11 +3,15 @@ version: 2
 # Keeps pinned versions fresh via reviewable PRs instead of silent drift:
 # - cargo: workspace dependencies + Cargo.lock (also surfaces advisory-driven
 #   bumps), complementing the weekly `advisories` CI heartbeat.
-# - github-actions: the `uses:` action refs in .github/workflows (checkout,
-#   cache, rust-toolchain).
-# Note: the `cargo install <tool> --version X` pins in ci.yml are run-commands,
-# not action refs, so they are bumped by hand when a tool releases — a
-# deliberate, reviewable change, which is the point.
+# - github-actions: the `uses:` action refs in .github/workflows. Actions are
+#   pinned to full commit SHAs with a trailing `# vX.Y.Z` comment; Dependabot
+#   understands this pattern and proposes SHA-update PRs when a new tag is
+#   published — so SHA pinning and auto-freshening coexist correctly.
+# NOT covered by Dependabot (bumped by hand — deliberate, reviewable edits):
+# - `cargo install <tool> --version X` pins in ci.yml: these are run-commands,
+#   not action refs, so Dependabot cannot see them.
+# - The Rust toolchain pin (@1.96.0 in ci.yml/release.yml + rust-toolchain.toml):
+#   excluded below for trybuild-snapshot determinism reasons (see ignore block).
 updates:
   - package-ecosystem: cargo
     directory: "/"
