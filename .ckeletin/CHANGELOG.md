@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.19] - 2026-06-10
 
 ### Fixed
 - **Reachable panic on audit-log permission failure.** `prepare_file_appender`
