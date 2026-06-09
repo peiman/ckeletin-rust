@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.18] - 2026-06-10
 
 ### Fixed
 - **`ckeletin-update` apply is now wholesale replacement** (HIGH). Replaced
