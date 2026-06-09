@@ -34,11 +34,22 @@ fn main() {
         "--dirty",
         "--match=__ckeletin_no_such_tag__",
     ])
-    .unwrap_or_else(|| "unknown".to_string());
+    .unwrap_or_else(|| {
+        println!(
+            "cargo:warning=ckeletin build identity unavailable: \
+             git describe failed; baking commit=unknown"
+        );
+        "unknown".to_string()
+    });
     // Date is informational; its independent failure degrades to an honest
     // "unknown" date, not a false cleanliness claim — so a separate call is safe.
-    let date =
-        git(&["show", "-s", "--format=%cs", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    let date = git(&["show", "-s", "--format=%cs", "HEAD"]).unwrap_or_else(|| {
+        println!(
+            "cargo:warning=ckeletin build identity unavailable: \
+             git show (date) failed; baking date=unknown"
+        );
+        "unknown".to_string()
+    });
 
     println!("cargo:rustc-env=CKELETIN_BUILD_COMMIT={commit}");
     println!("cargo:rustc-env=CKELETIN_BUILD_DATE={date}");
