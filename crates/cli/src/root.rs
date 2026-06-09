@@ -4,9 +4,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(name = "ckeletin-rust", about)]
 pub struct Cli {
-    /// Output format: text (human-readable) or json (machine-readable)
-    #[arg(long, global = true, default_value = "text")]
-    pub output: OutputFormat,
+    /// Output format: text (human-readable, default) or json (machine-readable).
+    /// Explicit --output text overrides config json=true or CKELETIN_JSON=true.
+    #[arg(long, global = true)]
+    pub output: Option<OutputFormat>,
 
     /// Configuration file path
     #[arg(long, global = true)]
