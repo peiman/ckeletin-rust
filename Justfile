@@ -3,8 +3,6 @@
 
 import '.ckeletin/Justfile'
 
-binary_name := "ckeletin-rust"
-
 # Single gateway — all checks (CKSPEC-ENF-001)
 check: ckeletin-check test ckeletin-health
     @echo "All checks passed."
@@ -29,9 +27,13 @@ coverage:
 build:
     cargo build --release
 
-# Initialize scaffold for a new project (run once after clone)
-init name:
-    .ckeletin/scripts/init.sh {{name}}
+# Initialize scaffold for a new project (run once after clone).
+# `name` is validated by init.sh (lowercase alphanumeric + hyphens). Quoting
+# prevents shell word-splitting on any character that passes that validation;
+# init.sh rejects names that contain spaces or special characters first.
+# Pass `force=true` to bypass the already-initialized guard (use with care).
+init name force="false":
+    .ckeletin/scripts/init.sh "{{name}}" "{{force}}"
 
 # Smoke-test the scaffold init flow: copy → `just init` → build + test a fresh
 # project in a temp dir. Slow (full from-scratch build) so it is #[ignore]d and

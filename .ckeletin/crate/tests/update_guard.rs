@@ -43,8 +43,13 @@ fn update_recipes_refuse_to_run_on_upstream_repo() {
     // These recipes are `just`-driven; the canonical test entry (`just check`)
     // and CI both have `just` installed. Skip visibly under a bare `cargo test`
     // on a machine without it rather than reporting a false failure.
+    // When CI=true, skip is a test failure — the tools must be present on CI.
     if !have("just") || !have("rsync") {
-        eprintln!("SKIP update_guard: `just`/`rsync` not on PATH");
+        let ci = std::env::var("CI").unwrap_or_default();
+        if ci == "true" {
+            panic!("FAIL update_guard: `just`/`rsync` are required on CI (CI=true)");
+        }
+        eprintln!("SKIP update_guard: `just`/`rsync` not on PATH (set CI=true to fail)");
         return;
     }
 

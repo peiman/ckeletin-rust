@@ -13,9 +13,11 @@
 //!   - init MUST leave a project that is a git repo tagged `v0.0.0`.
 //!
 //! Crucially it runs `cargo test --workspace` on the initialized project.
-//! init.sh's own verification compiles lib + bin targets but NOT test
-//! targets, so a broken integration-test file would otherwise escape
-//! detection until the user's first `just check`.
+//! init.sh's own verification uses `cargo check --workspace --all-targets`
+//! (lib, bin, AND test targets), so a broken integration-test file is caught
+//! immediately rather than waiting for the user's first `just check`. This
+//! test adds the extra guarantee of actually RUNNING the tests, not just
+//! compiling them.
 //!
 //! Ignored by default because it's slow (a full from-scratch build of the
 //! initialized project). Wired into CI as a dedicated job and runnable

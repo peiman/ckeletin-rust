@@ -11,16 +11,27 @@ ckeletin_version := `cat .ckeletin/VERSION`
 ckeletin_upstream_url := "https://github.com/peiman/ckeletin-rust.git"
 ckeletin_upstream_slug := "peiman/ckeletin-rust"
 
-# Show framework version and check for local modifications
+# Show framework version and check for local modifications.
+# Exits non-zero when the workspace does not compile (BROKEN) so `just check`
+# acts as a real gate. A dirty .ckeletin/ is a WARNING (not a gate failure)
+# because in CI the checkout is always clean; the warning is for local dev.
 ckeletin-health:
-    @echo "ckeletin framework v{{ckeletin_version}}"
-    @if [ -z "$(git status --porcelain .ckeletin/)" ]; then \
-        echo "Status: clean"; \
-    else \
-        echo "WARNING: .ckeletin/ has local changes (incl. added files) — next update will shadow/ignore them"; \
-        git status --porcelain .ckeletin/; \
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "ckeletin framework v{{ckeletin_version}}"
+    if [ -z "$(git status --porcelain .ckeletin/)" ]; then
+        echo "Status: clean"
+    else
+        echo "WARNING: .ckeletin/ has local changes (incl. added files) — next update will shadow/ignore them"
+        git status --porcelain .ckeletin/
     fi
-    @cargo check --workspace -q && echo "Workspace: compiles" || echo "Workspace: BROKEN"
+    # Propagate compile failure so `just check` catches a BROKEN workspace.
+    if cargo check --workspace -q; then
+        echo "Workspace: compiles"
+    else
+        echo "Workspace: BROKEN"
+        exit 1
+    fi
 
 # Show the framework version (parity with ckeletin-go's `task version`)
 ckeletin-version:
@@ -37,10 +48,17 @@ ckeletin-doctor format="text":
     EXPECTED=$(grep -E '^channel' rust-toolchain.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
     MSRV=$(grep -E '^rust-version' Cargo.toml 2>/dev/null | sed -E 's/.*"(.*)".*/\1/')
     RUSTC=$(command -v rustc >/dev/null 2>&1 && rustc --version | awk '{print $2}' || echo "")
+    # rustfmt/clippy are rustup components; they are required by `just check`.
+    # Detect by running `cargo fmt --version` / `cargo clippy --version` (which
+    # succeed only when the component is installed for the active toolchain).
+    RUSTFMT=$(cargo fmt --version >/dev/null 2>&1 && printf true || printf false)
+    CLIPPY=$(cargo clippy --version >/dev/null 2>&1 && printf true || printf false)
     if [ "{{format}}" = "json" ]; then
         present() { command -v "$1" >/dev/null 2>&1 && printf true || printf false; }
-        printf '{"framework_version":"%s","toolchain":{"pinned":"%s","msrv":"%s","rustc":"%s"},"tools":{' \
+        printf '{"framework_version":"%s","toolchain":{"pinned":"%s","msrv":"%s","rustc":"%s"},' \
             "{{ckeletin_version}}" "${EXPECTED:-}" "${MSRV:-}" "${RUSTC:-}"
+        printf '"components":{"rustfmt":%s,"clippy":%s},' "$RUSTFMT" "$CLIPPY"
+        printf '"tools":{'
         printf '"cargo-deny":%s,"cargo-llvm-cov":%s,"cargo-nextest":%s,"just":%s,"gitleaks":%s,' \
             "$(present cargo-deny)" "$(present cargo-llvm-cov)" "$(present cargo-nextest)" "$(present just)" "$(present gitleaks)"
         printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s}}\n' \
@@ -54,6 +72,10 @@ ckeletin-doctor format="text":
     echo "  MSRV (Cargo.toml):            ${MSRV:-unknown}"
     echo "  Installed rustc:              ${RUSTC:-NOT FOUND (install via https://rustup.rs)}"
     echo ""
+    echo "Components (rustup):"
+    [ "$RUSTFMT" = "true" ] && echo "  rustfmt component: installed" || echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"
+    [ "$CLIPPY" = "true" ] && echo "  clippy component: installed" || echo "  clippy component: NOT FOUND (rustup component add clippy)"
+    echo ""
     echo "Tools:"
     report() { if command -v "$1" >/dev/null 2>&1; then echo "  $2: installed"; else echo "  $2: NOT FOUND ($3)"; fi; }
     report cargo-deny "cargo-deny (just check)" "required: cargo install cargo-deny --locked"
@@ -65,8 +87,6 @@ ckeletin-doctor format="text":
     report grype "grype (just ckeletin-sbom-scan)" "optional: brew install grype"
     report cargo-geiger "cargo-geiger (just ckeletin-geiger, advisory)" "optional: cargo install cargo-geiger --locked"
     report cargo-bolero "cargo-bolero (coverage-guided fuzzing; bolero lib runs on stable)" "optional: cargo install cargo-bolero --locked"
-    if cargo fmt --version >/dev/null 2>&1; then echo "  rustfmt component: installed"; else echo "  rustfmt component: NOT FOUND (rustup component add rustfmt)"; fi
-    if cargo clippy --version >/dev/null 2>&1; then echo "  clippy component: installed"; else echo "  clippy component: NOT FOUND (rustup component add clippy)"; fi
     echo ""
     echo "Check for a newer framework version with: just ckeletin-check-update"
 
@@ -186,6 +206,10 @@ ckeletin-fuzz:
 ckeletin-check-update format="text":
     #!/usr/bin/env bash
     set -euo pipefail
+    if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
+        echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update check does not apply here."
+        exit 0
+    fi
     if ! git remote | grep -q ckeletin-upstream; then
         if [ "{{format}}" = "json" ]; then
             printf '{"error":"no_upstream_remote","hint":"git remote add ckeletin-upstream %s"}\n' "{{ckeletin_upstream_url}}"
@@ -226,14 +250,27 @@ ckeletin-update version="main":
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
     git fetch ckeletin-upstream
-    git checkout ckeletin-upstream/{{version}} -- .ckeletin/
+    # Resolve the ref: branch refs live under refs/remotes/ckeletin-upstream/;
+    # tags must be fetched explicitly and accessed via refs/tags/ or FETCH_HEAD.
+    if [ "{{version}}" = "main" ]; then
+        CHECKOUT_REF="ckeletin-upstream/main"
+    else
+        git fetch ckeletin-upstream "{{version}}"
+        CHECKOUT_REF="FETCH_HEAD"
+    fi
+    # Wholesale replacement: `git restore --source --staged --worktree` both adds
+    # new files AND deletes files absent from the source ref, matching the design
+    # doc's "replaced wholesale" promise. `git checkout <ref> -- <path>` does NOT
+    # delete files absent from the ref.
+    git restore --source="$CHECKOUT_REF" --staged --worktree -- .ckeletin/
     NEW_VERSION=$(cat .ckeletin/VERSION)
     cargo generate-lockfile
     # Tier 1: must still COMPILE. A non-compiling update is incompatible — roll
     # back fully (the framework crate or a moved API broke the build).
     if ! cargo check --workspace; then
         echo "Error: workspace does not compile after update. Rolling back."
-        git checkout HEAD -- .ckeletin/
+        # Restore HEAD state wholesale: removes added files, restores deleted files.
+        git restore --source=HEAD --staged --worktree -- .ckeletin/
         cargo generate-lockfile
         printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true}\n' "$OLD_VERSION" "$NEW_VERSION"
         exit 1
@@ -275,12 +312,20 @@ ckeletin-update-dry-run version="main":
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
     git fetch ckeletin-upstream
+    # Tag resolution: branches live under refs/remotes/ckeletin-upstream/; tags
+    # must be fetched explicitly.
+    if [ "{{version}}" = "main" ]; then
+        CHECKOUT_REF="ckeletin-upstream/main"
+    else
+        git fetch ckeletin-upstream "{{version}}"
+        CHECKOUT_REF="FETCH_HEAD"
+    fi
     LOCAL=$(cat .ckeletin/VERSION)
-    REMOTE=$(git show ckeletin-upstream/{{version}}:.ckeletin/VERSION 2>/dev/null || echo "unknown")
+    REMOTE=$(git show "$CHECKOUT_REF":.ckeletin/VERSION 2>/dev/null || echo "unknown")
     echo "Current: v$LOCAL → Available: v$REMOTE"
     echo ""
     echo "Files that would change:"
-    git diff HEAD..ckeletin-upstream/{{version}} --stat -- .ckeletin/
+    git diff "HEAD..$CHECKOUT_REF" --stat -- .ckeletin/
 
 # Applies the upstream .ckeletin/ to the working tree, runs the full `just check`
 # gate, then restores your committed framework (via a trap, so restoration
@@ -314,10 +359,14 @@ ckeletin-update-check-compatibility version="main":
         exit 0
     fi
     # Restore the committed framework no matter how we exit. .ckeletin/ is clean
-    # (checked above), so `git checkout HEAD` is a reliable, interrupt-safe undo.
-    restore() { git checkout HEAD -- .ckeletin/ && cargo generate-lockfile; }
+    # (checked above), so restoring from HEAD is a reliable, interrupt-safe undo.
+    # `git restore --source=HEAD --staged --worktree` removes added files AND
+    # restores deleted/modified files, leaving porcelain clean (unlike `git checkout
+    # HEAD -- .ckeletin/` which leaves upstream-added files staged).
+    restore() { git restore --source=HEAD --staged --worktree -- .ckeletin/ && cargo generate-lockfile; }
     trap restore EXIT
-    git checkout "$CHECKOUT_REF" -- .ckeletin/
+    # Wholesale replacement — see ckeletin-update for rationale.
+    git restore --source="$CHECKOUT_REF" --staged --worktree -- .ckeletin/
     cargo generate-lockfile
     # Run the FULL gate (`just check`), not just `cargo check` — so this also
     # surfaces clippy/test failures a release might introduce (e.g. tightened
