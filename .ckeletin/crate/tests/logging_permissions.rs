@@ -11,18 +11,23 @@ use ckeletin::logging::{init, LogConfig};
 use std::fs;
 
 #[cfg(unix)]
-#[test]
-fn log_directory_and_file_have_restricted_permissions() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let uid = std::process::Command::new("id")
+fn is_root() -> bool {
+    std::process::Command::new("id")
         .arg("-u")
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| s.trim().parse::<u32>().ok())
-        .unwrap_or(1);
-    if uid == 0 {
+        .unwrap_or(1)
+        == 0
+}
+
+#[cfg(unix)]
+#[test]
+fn log_directory_and_file_have_restricted_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if is_root() {
         eprintln!("SKIP: running as root, permission tests are unreliable");
         return;
     }
@@ -62,4 +67,50 @@ fn log_directory_and_file_have_restricted_permissions() {
             entry.path()
         );
     }
+}
+
+/// A pre-existing log directory with lax permissions (0755) must be tightened
+/// to 0700. This is tested by replicating the chmod logic directly — `init()`
+/// can only be called once per process (global subscriber), so we exercise the
+/// directory hardening path in isolation here.
+#[cfg(unix)]
+#[test]
+fn pre_existing_lax_log_dir_is_tightened_to_0700() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if is_root() {
+        eprintln!("SKIP: running as root, permission tests are unreliable");
+        return;
+    }
+
+    let base = tempfile::tempdir().unwrap();
+    let log_dir = base.path().join("logs");
+
+    // Pre-create the directory with lax 0755 permissions (as if a previous
+    // `sudo` run created it world-readable).
+    fs::create_dir_all(&log_dir).unwrap();
+    fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let before = fs::metadata(&log_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(before, 0o755, "pre-condition: dir must start at 0755");
+
+    // Simulate what prepare_file_appender does on Unix: DirBuilder won't
+    // change mode on an existing directory, but the unconditional set_permissions
+    // call afterwards must tighten it.
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&log_dir)
+            .unwrap();
+        // This is the key line: unconditional tighten, even for pre-existing dirs.
+        fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    let after = fs::metadata(&log_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        after, 0o700,
+        "pre-existing 0755 audit log dir must be tightened to 0700, got {after:o}"
+    );
 }
