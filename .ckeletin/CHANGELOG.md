@@ -1,5 +1,15 @@
 # ckeletin Framework Changelog
 
+## [0.2.23] - 2026-06-10
+
+### Added
+- **Empty-layer-list semantics pinned by test** — `infrastructure = []` (or any
+  empty layer list) in `ckeletin-project.toml` means "this architecture has no
+  such layer: enforce nothing for it", while declared layers stay enforced.
+  Two consumers (agent-chat, ioguard) ship this shape for adapter crates that
+  import the core by design; `empty_layer_list_is_an_honest_declaration_not_an_error`
+  in `consumer_layout_fixtures.rs` guards it against future refactors.
+
 ## [0.2.22] - 2026-06-10
 
 ### Added

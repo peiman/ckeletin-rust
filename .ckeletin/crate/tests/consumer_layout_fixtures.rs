@@ -556,3 +556,61 @@ cli = ["chat-cli"]
         result.unwrap_err()
     );
 }
+
+#[test]
+fn empty_layer_list_is_an_honest_declaration_not_an_error() {
+    // The agent-chat / ioguard shape (consumer feedback, 2026-06-10): adapter
+    // crates (chat-daemon, ioguard-ffi) import the core BY DESIGN, which the
+    // ckeletin infrastructure rules forbid — so those repos declare
+    // `infrastructure = []` rather than a forced or false mapping. An empty
+    // layer list must mean "this architecture has no such layer: enforce
+    // nothing for it", while the layers that ARE declared stay enforced.
+    // Two real consumers depend on this; a future refactor that turns an
+    // empty list into an error or a panic breaks both.
+    let ws = make_fixture(&[
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = []
+cli = ["chat-cli"]
+
+[allowlists]
+domain = ["serde"]
+"#,
+        ),
+        (
+            "chat-core/Cargo.toml",
+            &cargo_toml_with_deps("chat-core", &["serde"]),
+        ),
+        // The adapter crate imports the core — fine, because no
+        // infrastructure layer is declared for it to violate.
+        (
+            "chat-daemon/Cargo.toml",
+            &cargo_toml_with_deps("chat-daemon", &["chat-core", "tokio"]),
+        ),
+    ]);
+
+    let infra = check_infra_allowlist(ws.path());
+    assert!(
+        infra.is_ok(),
+        "empty infrastructure layer list must enforce nothing, got: {:?}",
+        infra.unwrap_err()
+    );
+
+    // Declared layers stay enforced in the same config: a domain violation
+    // is still caught.
+    let domain = check_domain_allowlist(ws.path());
+    assert!(domain.is_ok(), "domain within allowlist must pass");
+    std::fs::write(
+        ws.path().join("chat-core/Cargo.toml"),
+        cargo_toml_with_deps("chat-core", &["serde", "reqwest"]),
+    )
+    .unwrap();
+    let domain_violation = check_domain_allowlist(ws.path());
+    assert!(
+        domain_violation.is_err(),
+        "declared domain layer must still be enforced alongside empty layers"
+    );
+}

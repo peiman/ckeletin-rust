@@ -112,6 +112,14 @@ enabled = false
 | File absent + `crates/domain` exists | Enforce scaffold strict defaults (`domain=["serde"]`) |
 | File absent + no scaffold layout | Skip loudly — print a nudge naming `ckeletin-project.toml` |
 | File present but malformed TOML | Hard error — never silenced |
+| A layer declared as `[]` (empty list) | Nothing enforced for that layer — by design |
+
+**Declare only the layers your architecture actually has — an empty layer
+list is an honest answer.** Example: a consumer whose adapter crates import
+the core by design has no ckeletin-style infrastructure layer; declaring
+`infrastructure = []` states that truthfully instead of forcing a false
+mapping. The layers you do declare stay strictly enforced. (Consumer
+feedback, 2026-06-10 — agent-chat and ioguard both ship this shape.)
 
 ## Commands
 
