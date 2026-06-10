@@ -10,7 +10,7 @@
 //! This file tests the file-logging path — the code at 59% coverage.
 //! Permission tests live in logging_permissions.rs (separate binary).
 
-use ckeletin::logging::{init, LogConfig};
+use ckeletin::logging::{LogConfig, init};
 use std::fs;
 
 #[cfg(unix)]

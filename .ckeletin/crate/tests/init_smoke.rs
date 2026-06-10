@@ -147,7 +147,9 @@ fn init_produces_committed_compilable_project() {
     let scan_result = ckeletin::scaffold_scan::scan_for_leftovers(&project_dir);
     match &scan_result {
         ckeletin::scaffold_scan::ScanOutcome::Upstream => {
-            panic!("scaffold_scan reported Upstream for the initialized project — init.sh must have failed to rewrite the upstream slug in Cargo.toml");
+            panic!(
+                "scaffold_scan reported Upstream for the initialized project — init.sh must have failed to rewrite the upstream slug in Cargo.toml"
+            );
         }
         ckeletin::scaffold_scan::ScanOutcome::Leftovers(hits) => {
             let report = hits.join("\n  ");

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
-    fmt, layer::SubscriberExt, registry, util::SubscriberInitExt, EnvFilter, Layer,
+    EnvFilter, Layer, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt,
 };
 
 /// Guard that must be held for the lifetime of the application.

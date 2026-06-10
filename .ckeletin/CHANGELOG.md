@@ -1,5 +1,24 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Rust edition bumped from 2021 to 2024** across all framework crates
+  (`.ckeletin/crate`, `.ckeletin/conform`) and the workspace root (which
+  propagates to `crates/domain`, `crates/infrastructure`, `crates/cli` via
+  `edition.workspace = true`). The migration required zero mechanical code
+  changes (all five `cargo fix --edition` runs reported no idiom rewrites
+  needed); two `collapsible_if` Clippy lints in `scaffold_scan.rs` and
+  `conform/src/main.rs` were resolved using the now-stable let-chain syntax
+  (`if cond && let Ok(x) = …`).
+
+  **Consumer note:** consumers' own crates keep their own edition — only the
+  vendored `.ckeletin/crate` and `.ckeletin/conform` editions change.
+  `just check` compiles `.ckeletin/crate` at edition 2024, which requires
+  `rustc >= 1.85`. The toolchain floor in `rust-toolchain.toml` is 1.96, so
+  existing consumers already satisfy this requirement.
+
 ## [0.2.25] - 2026-06-10
 
 ### Fixed

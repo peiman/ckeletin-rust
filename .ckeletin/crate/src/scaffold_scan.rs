@@ -104,28 +104,28 @@ fn collect_scan_targets(workspace_root: &Path) -> Vec<PathBuf> {
 
     // .github/workflows/*.yml
     let workflows_dir = workspace_root.join(".github").join("workflows");
-    if workflows_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&workflows_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "yml") {
-                    targets.push(path);
-                }
+    if workflows_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&workflows_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "yml") {
+                targets.push(path);
             }
         }
     }
 
     // crates/**/Cargo.toml (recursive, depth-2: crates/<name>/Cargo.toml)
     let crates_dir = workspace_root.join("crates");
-    if crates_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&crates_dir) {
-            for entry in entries.flatten() {
-                let crate_dir = entry.path();
-                if crate_dir.is_dir() {
-                    let cargo_toml = crate_dir.join("Cargo.toml");
-                    if cargo_toml.exists() {
-                        targets.push(cargo_toml);
-                    }
+    if crates_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&crates_dir)
+    {
+        for entry in entries.flatten() {
+            let crate_dir = entry.path();
+            if crate_dir.is_dir() {
+                let cargo_toml = crate_dir.join("Cargo.toml");
+                if cargo_toml.exists() {
+                    targets.push(cargo_toml);
                 }
             }
         }
@@ -178,11 +178,7 @@ fn scan_file(path: &Path, workspace_root: &Path) -> Option<Vec<String>> {
         }
     }
 
-    if hits.is_empty() {
-        None
-    } else {
-        Some(hits)
-    }
+    if hits.is_empty() { None } else { Some(hits) }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
