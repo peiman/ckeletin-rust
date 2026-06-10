@@ -362,14 +362,20 @@ fn version_json_commit_is_real_sha_not_unknown() {
     let commit = v["data"]["commit"]
         .as_str()
         .expect("data.commit must be a string");
-    // Strip optional -dirty suffix, then assert the remainder is a 7-hex-char SHA.
+    // Strip optional -dirty suffix, then assert the remainder is an abbreviated
+    // hex SHA. Length is 7..=40 rather than exactly 7: `git describe --abbrev=7`
+    // emits MORE digits when needed for uniqueness, and core.abbrev overrides
+    // or repo growth must not break this test.
     let sha = commit.strip_suffix("-dirty").unwrap_or(commit);
     assert_ne!(
         sha, "unknown",
         "data.commit must NOT be \"unknown\" in a git workspace; \
          build.rs git describe must have succeeded"
     );
-    assert_eq!(sha.len(), 7, "commit SHA must be 7 chars, got {sha:?}");
+    assert!(
+        (7..=40).contains(&sha.len()),
+        "commit SHA must be 7-40 chars, got {sha:?}"
+    );
     assert!(
         sha.chars().all(|c| c.is_ascii_hexdigit()),
         "commit SHA must be hex [0-9a-f], got {sha:?}"
