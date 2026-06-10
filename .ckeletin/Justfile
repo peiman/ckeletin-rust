@@ -207,7 +207,11 @@ ckeletin-check-update format="text":
     #!/usr/bin/env bash
     set -euo pipefail
     if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
-        echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update check does not apply here."
+        if [ "{{format}}" = "json" ]; then
+            printf '{"applicable":false,"reason":"upstream repository"}\n'
+        else
+            echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update check does not apply here."
+        fi
         exit 0
     fi
     if ! git remote | grep -q ckeletin-upstream; then
