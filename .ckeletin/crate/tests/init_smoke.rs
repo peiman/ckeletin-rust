@@ -135,6 +135,33 @@ fn init_produces_committed_compilable_project() {
         "ping.rs (worked example) should be retained after init"
     );
 
+    // Scaffold-leftover guard: the initialized project has no upstream
+    // fingerprint, so it runs in consumer mode. Assert ZERO leftovers remain
+    // in functional files — this catches any scaffolded file that init.sh
+    // forgot to substitute AND any new file that bakes in the scaffold's
+    // identity without a derivation. This gate makes "scaffold gained a new
+    // identity-bearing functional file that nothing substitutes or derives"
+    // a PR-time failure in THIS repo. If this assertion fires, fix the
+    // leftover (derivation preferred, init.sh substitution second) until it
+    // is green — do not weaken the scan.
+    let scan_result = ckeletin::scaffold_scan::scan_for_leftovers(&project_dir);
+    match &scan_result {
+        ckeletin::scaffold_scan::ScanOutcome::Upstream => {
+            panic!("scaffold_scan reported Upstream for the initialized project — init.sh must have failed to rewrite the upstream slug in Cargo.toml");
+        }
+        ckeletin::scaffold_scan::ScanOutcome::Leftovers(hits) => {
+            let report = hits.join("\n  ");
+            panic!(
+                "scaffold-leftover guard: the initialized project still contains \
+                 `ckeletin-rust` literals in functional files. Fix init.sh or \
+                 switch the file to a derivation-based approach:\n  {report}"
+            );
+        }
+        ckeletin::scaffold_scan::ScanOutcome::Clean => {
+            // No leftovers — gate passes.
+        }
+    }
+
     // The strongest signal: the initialized project's full test suite
     // compiles and passes. This compiles test targets — which init.sh's own
     // `cargo check` does not exercise — so a mangled integration-test file

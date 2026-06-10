@@ -46,10 +46,23 @@ fn read_rs_files(dir: &Path) -> Vec<(String, String)> {
 #[test]
 fn no_project_name_in_framework_source() {
     let forbidden = ["ckeletin-rust", "workhorse"];
+
+    // Intentional exceptions: files whose purpose is to DEFINE or DETECT the
+    // scaffold identity. scaffold_scan.rs is the one module that legitimately
+    // names the scaffold identity — it defines the constant the guard scans for
+    // and the upstream-fingerprint used for self-detection. All other framework
+    // source must remain project-agnostic.
+    let allowed_files = ["scaffold_scan.rs"];
+
     let files = all_framework_source();
     assert!(!files.is_empty(), "Should find framework source files");
 
     for (path, content) in &files {
+        // Skip files that are allowed to contain the identity literal.
+        if allowed_files.iter().any(|allowed| path.ends_with(allowed)) {
+            continue;
+        }
+
         // Skip test modules inside source files
         let code = if let Some(pos) = content.find("#[cfg(test)]") {
             &content[..pos]
