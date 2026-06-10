@@ -18,10 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restores the original framework via a trap (interrupt-safe). Mirrors
   ckeletin-go's `task ckeletin:update:check-compatibility`. Upstream self-guard
   prevents the update recipes from running on the upstream repo itself.
-- **Doctor and version recipes** (#17): `just ckeletin-doctor [format=json]`
+- **Doctor and version recipes** (#17): `just ckeletin-doctor [json]`
   reports the dev environment (framework version, toolchain, tool presence)
-  and accepts `format=json` for machine-readable output that an autonomous
-  agent can parse. `just ckeletin-version` mirrors ckeletin-go's `task version`.
+  and accepts `json` (positional) for machine-readable output: `just ckeletin-doctor json`.
+  `just ckeletin-version` mirrors ckeletin-go's `task version`.
 - **Secret scanning with gitleaks** (#18): `just ckeletin-secrets` scans the
   working tree for hardcoded secrets. Gated via the `secret-scan` CI job and
   the lefthook pre-commit hook; excluded from `just check` so a missing
@@ -36,13 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (test assertions against 0.0/1.0 are idiomatic and should not be denied).
   `just ckeletin-geiger` reports the `unsafe` surface (advisory, never gates).
 - **Fuzzing worked example with bolero** (#21): `fuzz_ping` target under
-  `crates/cli/tests/`; exercises bolero's generative testing on stable
+  `crates/domain/tests/`; exercises bolero's generative testing on stable
   toolchain via `just ckeletin-fuzz`. Pedagogical template — not a meaningful
   guard for the trivial shipped type.
 - **Agent-drivable update/diagnostic surface** (#23): `just ckeletin-check-update`
-  accepts `format=json` and emits `{"current","latest","update_available"}` for
-  autonomous agents. `just ckeletin-update` now emits a machine-readable
-  `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`
+  accepts `json` as a positional argument (`just ckeletin-check-update json`) and emits
+  `{"current","latest","update_available"}` for autonomous agents. `just ckeletin-update`
+  now emits a machine-readable `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`
   verdict on every exit path.
 - **Conformance brought up to spec v0.7.0** (#14, framework 0.2.6): 39
   requirements all met, adopting the published-report aggregation model.
@@ -144,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SHA-pinned to full commit SHAs with `# vX.Y.Z` comments; grype install
   replaced from `curl | sudo sh` with a checksummed download; GitHub token
   permissions scoped to least-privilege per workflow job.
-- **Deny yanked crates** (#5): `[advisories] deny = ["yanked"]` added to
+- **Deny yanked crates** (#5): `yanked = "deny"` added to `[advisories]` in
   `deny.toml` so yanked transitive dependencies fail `just check`.
 - Bumped `rustls-webpki` 0.103.12 → 0.103.13 (RUSTSEC-2026-0104: reachable
   panic parsing certificate revocation lists, pulled in transitively via
