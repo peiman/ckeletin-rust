@@ -1,5 +1,19 @@
 # ckeletin Framework Changelog
 
+## [0.2.25] - 2026-06-10
+
+### Fixed
+- **Scaffold-leftover guard now scans the REAL tree** (Finding 5,
+  consumer-feedback-2026-06-10.md). 0.2.24 shipped the guard with 14 call
+  sites — all hermetic fixtures plus the fresh-init copy — so an EXISTING
+  consumer's tree was never scanned and `just check` stayed green on real
+  leftovers (ioguard proved it: green at 0.2.24 with the v0.1.0-eating
+  `target/release/ckeletin-rust` still in its release.yml). New test
+  `this_repos_real_tree_has_no_scaffold_leftovers` mirrors arch_allowlist's
+  real-tree pattern: skips on upstream, red-gates consumers until clean.
+  Verified by re-attack: a simulated consumer with a planted leftover fails
+  `just check` with file:line messages.
+
 ## [0.2.24] - 2026-06-10
 
 ### Fixed
