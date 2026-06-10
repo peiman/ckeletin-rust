@@ -70,6 +70,8 @@ crates/
 
 **Tags work for the version argument:** `just ckeletin-update v0.2.18` resolves the tag via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`.
 
+**Scaffold-leftover guard:** consumer repos fail `just check` if functional files (`.github/workflows/*.yml`, root `Justfile`, `lefthook.yml`, `Cargo.toml`s, `deny.toml`) still contain the literal `ckeletin-rust` on non-comment, non-gating lines. This guard fires after `just ckeletin-update` so you find leftovers immediately rather than at release time. Exclusions: comment lines, `github.repository ==` gating lines, everything under `.ckeletin/`. On update, the guard may flag your pre-existing `release.yml` — the exact defect that caused ioguard v0.1.0 to publish zero artifacts. See ioguard PR #4 as the worked fix; the current upstream `release.yml` uses `cargo metadata --no-deps` to derive the binary name structurally and is the reference implementation.
+
 ## ckeletin-project.toml — Project-Owned Conformance Config
 
 `ckeletin-project.toml` at the workspace root is the **project-owned** file where you declare your layer layout and allowlists.  It lives outside `.ckeletin/` and is **never touched by `just ckeletin-update`**.  This is the SSOT for everything you need to tailor — never edit `.ckeletin/crate/tests/arch_allowlist.rs` or `.ckeletin/crate/tests/violation_drift_guard.rs` (they are framework-owned and clobbered on every update).

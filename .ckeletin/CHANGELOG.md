@@ -1,5 +1,51 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Instance 4 — `ckeletin-sbom` recipe derives bin package from `cargo metadata`**
+  instead of hardcoding `crates/cli/cli.cdx.json`. Consumers with any CLI crate
+  name now get a working SBOM recipe without a recipe override. (ioguard had to
+  override this recipe because the hardcoded path exited 1 in CI.)
+
+- **Instance 3 — `release.yml` selects the bin package structurally**, not by a
+  literal package name (`"cli"` → `select(.targets[]? | .kind[]? == "bin")`).
+  Both the tag-reconciliation step and the binary-name resolution step now find
+  the correct package regardless of what the consumer calls their CLI crate.
+
+### Added
+
+- **Scaffold-leftover guard** (`scaffold_scan.rs` + `scaffold_leftover_guard.rs`
+  fixture tests). Consumer repos now fail `just check` when functional files
+  (`.github/workflows/*.yml`, root `Justfile`, `lefthook.yml`, `Cargo.toml`s,
+  `deny.toml`) still contain the literal `ckeletin-rust` on non-comment,
+  non-gating lines. Exclusions: lines starting with `#`, lines containing
+  `github.repository ==`, everything under `.ckeletin/`.
+
+- **`init_smoke` gate**: after the init flow succeeds, the scaffold-leftover scan
+  is run against the initialized project in consumer mode. A new scaffolded file
+  that bakes in the identity without substitution or derivation becomes a
+  PR-time compile failure in this repo — the leftover class is unshippable.
+
+### Migration note for existing consumers
+
+On updating to this version, `just check` may flag your `release.yml` if it
+still selects the bin package by the literal name `"cli"` (or hardcodes
+`ckeletin-rust`). This is the exact defect that caused ioguard v0.1.0 to publish
+zero release artifacts — the binary path in the workflow named the scaffold's
+binary, not ioguard's. The fix is to replace the literal-name selection with the
+structural form shown in the current upstream `release.yml`:
+
+```yaml
+BIN=$(cargo metadata --format-version 1 --no-deps \
+  | jq -r '.packages[] | select(.targets[]? | .kind[]? == "bin") | .targets[] | select(.kind[] == "bin") | .name' \
+  | head -1)
+```
+
+ioguard PR #4 is the worked fix; the current upstream `release.yml` is the
+reference implementation.
+
 ## [0.2.23] - 2026-06-10
 
 ### Added
