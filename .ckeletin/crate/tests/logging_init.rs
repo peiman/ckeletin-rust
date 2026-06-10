@@ -31,11 +31,16 @@ fn prepare_file_appender_errors_not_panics_on_unwritable_dir() {
     }
     let dir = tempfile::tempdir().unwrap();
 
-    // Make directory unwritable so appender cannot create a file inside it.
+    // Make the PARENT read-only so the log dir itself cannot be created.
+    // (A read-only dir owned by the test user no longer suffices: init
+    // self-heals it via the unconditional 0700 chmod — owners may always
+    // chmod their own dirs. Creating a subdir under a 0555 parent fails
+    // with EPERM before the chmod line is reached, which also matches the
+    // real attack — a root-owned dir from a sudo run — for a non-owner.)
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    let log_path = dir.path().join("app.log");
+    let log_path = dir.path().join("subdir").join("app.log");
     let config = LogConfig {
         console_level: "off".to_string(),
         file_enabled: true,
