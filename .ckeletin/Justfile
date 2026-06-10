@@ -61,8 +61,8 @@ ckeletin-doctor format="text":
         printf '"tools":{'
         printf '"cargo-deny":%s,"cargo-llvm-cov":%s,"cargo-nextest":%s,"just":%s,"gitleaks":%s,' \
             "$(present cargo-deny)" "$(present cargo-llvm-cov)" "$(present cargo-nextest)" "$(present just)" "$(present gitleaks)"
-        printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s}}\n' \
-            "$(present cargo-cyclonedx)" "$(present grype)" "$(present cargo-geiger)" "$(present cargo-bolero)"
+        printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s,"cargo-outdated":%s}}\n' \
+            "$(present cargo-cyclonedx)" "$(present grype)" "$(present cargo-geiger)" "$(present cargo-bolero)" "$(present cargo-outdated)"
         exit 0
     fi
     echo "ckeletin framework v{{ckeletin_version}}"
@@ -87,6 +87,7 @@ ckeletin-doctor format="text":
     report grype "grype (just ckeletin-sbom-scan)" "optional: brew install grype"
     report cargo-geiger "cargo-geiger (just ckeletin-geiger, advisory)" "optional: cargo install cargo-geiger --locked"
     report cargo-bolero "cargo-bolero (coverage-guided fuzzing; bolero lib runs on stable)" "optional: cargo install cargo-bolero --locked"
+    report cargo-outdated "cargo-outdated (just ckeletin-outdated)" "optional: cargo install cargo-outdated --locked"
     echo ""
     echo "Check for a newer framework version with: just ckeletin-check-update"
 
@@ -120,6 +121,26 @@ ckeletin-clippy:
 
 ckeletin-deny:
     cargo deny check
+
+# Report direct dependencies with newer published versions (informational —
+# always exits 0; it reports freshness, it does not gate the build). Mirrors
+# ckeletin-go's `task ckeletin:check:deps:outdated`, which pipes go modules
+# through go-mod-outdated -direct. Covers cargo dependencies only: the CI
+# tool pins in .github/workflows/ci.yml (just, cargo-deny, cargo-llvm-cov,
+# grype, ...) are a separate surface that neither this nor Dependabot watches.
+# Install: cargo install cargo-outdated --locked.
+ckeletin-outdated:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if ! command -v cargo-outdated >/dev/null 2>&1; then
+        echo "cargo-outdated not found (informational tool). Install: cargo install cargo-outdated --locked"
+        exit 0
+    fi
+    echo "Checking direct dependencies for newer published versions..."
+    cargo outdated --root-deps-only --workspace \
+        || echo "cargo-outdated exited non-zero — informational only, not a gate."
+    echo ""
+    echo "Note: CI tool pins (.github/workflows/ci.yml) are not covered — review those by hand."
 
 ckeletin-check: ckeletin-fmt-check ckeletin-clippy ckeletin-deny
 

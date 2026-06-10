@@ -1,5 +1,17 @@
 # ckeletin Framework Changelog
 
+## [0.2.27] - 2026-06-10
+
+### Added
+- **`just ckeletin-outdated`** — reports direct dependencies with newer
+  published versions via `cargo outdated --root-deps-only --workspace`
+  (graceful install hint when the tool is absent; informational, always
+  exit 0, not part of `just check`). Parity with ckeletin-go's
+  `task ckeletin:check:deps:outdated`. The scaffold root Justfile gains an
+  `outdated` alias (mirrors go's root `check:deps:outdated`). `cargo-outdated`
+  added to `ckeletin-doctor`'s tools report (text + JSON). Honest scope note:
+  cargo deps only — CI tool pins in ci.yml remain a hand-reviewed surface.
+
 ## [0.2.26] - 2026-06-10
 
 ### Changed

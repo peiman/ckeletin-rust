@@ -133,6 +133,7 @@ feedback, 2026-06-10 — agent-chat and ioguard both ship this shape.)
 | Check formatting | `just ckeletin-fmt-check` |
 | Run clippy | `just ckeletin-clippy` |
 | License/advisory check | `just ckeletin-deny` |
+| Outdated direct deps (informational) | `just outdated` (alias for `just ckeletin-outdated`; needs `cargo install cargo-outdated --locked`; CI tool pins in ci.yml are NOT covered) |
 | Coverage (85% min) | `just coverage` |
 | Build release binary | `just build` |
 | Framework environment report | `just ckeletin-doctor` |

@@ -27,6 +27,10 @@ coverage:
 build:
     cargo build --release
 
+# Check direct dependencies for newer published versions (parity with
+# ckeletin-go's `task check:deps:outdated`). Informational — not in `just check`.
+outdated: ckeletin-outdated
+
 # Initialize scaffold for a new project (run once after clone).
 # `name` is validated by init.sh (lowercase alphanumeric + hyphens). Quoting
 # prevents shell word-splitting on any character that passes that validation;
