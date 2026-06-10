@@ -16,9 +16,13 @@ on:
 permissions:
   contents: read
 
-# Cancel in-flight runs for the same ref so stale PR runs don't waste runners.
+# Cancel in-flight runs for the same branch/PR. Include event_name in the group
+# key so schedule/workflow_dispatch runs on refs/heads/main get a distinct
+# group from push runs — a push must not cancel the weekly advisory heartbeat.
+# cancel-in-progress is intentionally unconditional: a newer push to the same
+# branch/event supersedes the old run in every case.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -27,11 +31,12 @@ env:
 # Tool versions are PINNED, not floating: `cargo install <tool> --locked` only
 # pins the tool's own dependencies, NOT the tool version, so a breaking release
 # of just/cargo-deny/cargo-llvm-cov would otherwise break CI with no change
-# here. Bumping these is a deliberate, reviewable edit. Action SHAs are kept
-# fresh by Dependabot (github-actions ecosystem, weekly schedule).
-# The Rust toolchain is pinned via rust-toolchain.toml and @1.96.0 below so the
-# version-sensitive trybuild snapshots stay stable. It is intentionally excluded
-# from Dependabot auto-bumps — see dependabot.yml for the rationale.
+# here. Bumping these is a deliberate, reviewable edit. Most action SHAs are
+# kept fresh by Dependabot (github-actions ecosystem, weekly schedule).
+# Exception: dtolnay/rust-toolchain is used as a mutable semver tag (@1.96.0),
+# not a pinned SHA — it is intentionally excluded from Dependabot auto-bumps
+# because the version-sensitive trybuild snapshots must stay stable. See
+# dependabot.yml for the rationale.
 
 jobs:
   advisories:
