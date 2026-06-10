@@ -58,17 +58,17 @@ crates/
 |--------|-------------|
 | `just ckeletin-health` | Verify framework version, warn on local `.ckeletin/` modifications, exit non-zero on broken workspace |
 | `just ckeletin-version` | Print framework version string |
-| `just ckeletin-doctor [format=json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `format=json` for machine-readable output |
-| `just ckeletin-check-update [format=json]` | Check whether a newer framework version is available. `format=json` emits `{"current","latest","update_available"}` |
-| `just ckeletin-update [version=<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}` |
-| `just ckeletin-update-dry-run [version=<branch\|tag>]` | Preview what would change without applying |
-| `just ckeletin-update-check-compatibility [version=<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept |
+| `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
+| `just ckeletin-check-update [json]` | Check whether a newer framework version is available. Pass `json` for `{"current","latest","update_available"}`: `just ckeletin-check-update json` |
+| `just ckeletin-update [<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`. Example: `just ckeletin-update v0.2.18` |
+| `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Example: `just ckeletin-update-dry-run v0.2.18` |
+| `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Example: `just ckeletin-update-check-compatibility v0.2.18` |
 | `just conform [ARGS]` | Run conformance generator against the vendored spec snapshot (hermetic, no network). Upstream-only — no-ops in consumer repos |
 | `just conform-refresh` | Fetch the latest spec from upstream and update `conformance/requirements.json`. Upstream-only |
 | `just conform-report` | Regenerate `conformance-report.json` from the mapping (CKSPEC-ENF-010). Upstream-only |
-| `just init name=<slug> [force=true]` | Initialize the scaffold for a new project. The `name` argument is required; `force=true` bypasses the already-initialized guard (use with care — normally harmless to run twice, the guard prevents accidental re-initialization) |
+| `just init <slug> [true]` | Initialize the scaffold for a new project. The `name` argument is required (positional); pass `true` as the second positional argument to bypass the already-initialized guard: `just init my-app` or `just init my-app true` |
 
-**Tags work for `version=`:** `just ckeletin-update version=v0.2.18` resolves the tag via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`.
+**Tags work for the version argument:** `just ckeletin-update v0.2.18` resolves the tag via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`.
 
 ## Commands
 
@@ -83,7 +83,7 @@ crates/
 | Coverage (85% min) | `just coverage` |
 | Build release binary | `just build` |
 | Framework environment report | `just ckeletin-doctor` |
-| Framework environment report (JSON) | `just ckeletin-doctor format=json` |
+| Framework environment report (JSON) | `just ckeletin-doctor json` |
 | Run single crate tests | `cargo test -p domain` |
 | Run specific test | `cargo test -p ckeletin --lib output::tests::envelope_success` |
 
@@ -199,7 +199,7 @@ The audit log (CKSPEC-OUT-004) writes to `~/.config/<app>/logs/` by default, usi
 - **Integration tests:** `assert_cmd` in `crates/cli/tests/cli.rs`
 - **Coverage:** `just coverage` (85% minimum, CKSPEC-TEST-002)
 - **No mock frameworks.** Use writer injection (pass `&mut dyn Write`) or simple test doubles.
-- **Fuzz target (`fuzz_ping`):** a bolero-based generative test under `crates/cli/tests/fuzz_ping.rs`. This is a pedagogical worked example showing the bolero harness pattern for stable-toolchain generative testing. The production `ping` type is trivial, so this target serves as a template — not a meaningful guard for the shipped type itself.
+- **Fuzz target (`fuzz_ping`):** a bolero-based generative test under `crates/domain/tests/fuzz_ping.rs`. This is a pedagogical worked example showing the bolero harness pattern for stable-toolchain generative testing. The production `ping` type is trivial, so this target serves as a template — not a meaningful guard for the shipped type itself.
 
 ## Platform Notes
 

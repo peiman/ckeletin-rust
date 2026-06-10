@@ -31,12 +31,12 @@ cd ckeletin-rust
 just check    # fmt + clippy + test + deny + health
 
 # Template workflow: initialize a new derived project
-just init name=my-app
+just init my-app
 ```
 
 > **Already-initialized guard:** `just init` detects if the project has already
 > been initialized (name in `Cargo.toml` no longer matches the scaffold slug) and
-> exits with an explanation. Pass `force=true` to override.
+> exits with an explanation. Pass `true` as the second positional argument to override: `just init my-app true`.
 
 ```bash
 # Run the scaffold commands
