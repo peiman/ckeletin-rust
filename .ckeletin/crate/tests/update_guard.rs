@@ -119,4 +119,33 @@ fn update_recipes_refuse_to_run_on_upstream_repo() {
             "`just {recipe}` reached a git command instead of short-circuiting.\nstderr: {stderr}"
         );
     }
+
+    // ckeletin-check-update json: guard must emit JSON, not prose, when json
+    // format is requested — so an autonomous agent can reliably parse the output.
+    let out = Command::new("just")
+        .args(["ckeletin-check-update", "json"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run `just ckeletin-check-update json`: {e}"));
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "`just ckeletin-check-update json` should exit 0 on upstream repo.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "`just ckeletin-check-update json` guard must emit JSON on upstream repo, got: {stdout:?}\nerr: {e}"
+        )
+    });
+    assert_eq!(
+        parsed["applicable"], false,
+        "JSON guard must set applicable:false, got: {parsed}"
+    );
+    assert!(
+        parsed["reason"].is_string(),
+        "JSON guard must include a reason field, got: {parsed}"
+    );
 }
