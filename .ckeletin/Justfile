@@ -151,8 +151,32 @@ ckeletin-sbom:
         echo "Error: cargo-cyclonedx not found. Install: cargo install cargo-cyclonedx --locked"
         exit 1
     fi
+    # Derive the bin package's name and manifest directory from cargo metadata
+    # instead of hardcoding the scaffold's crate path. This works regardless of
+    # what the consumer calls their CLI crate (ioguard-cli, chat-cli, etc.).
+    BIN_PKG=$(cargo metadata --format-version 1 --no-deps \
+        | jq -r '.packages[] | select(.targets[]? | .kind[]? == "bin") | .name' \
+        | head -1)
+    if [ -z "$BIN_PKG" ]; then
+        echo "Error: could not find a package with a bin target in this workspace." >&2
+        echo "  cargo metadata --no-deps lists no bin-target packages." >&2
+        exit 1
+    fi
+    BIN_MANIFEST_DIR=$(cargo metadata --format-version 1 --no-deps \
+        | jq -r --arg pkg "$BIN_PKG" '.packages[] | select(.name == $pkg) | .manifest_path | gsub("/Cargo.toml$"; "")')
+    echo "Bin package: $BIN_PKG (manifest dir: $BIN_MANIFEST_DIR)"
     cargo cyclonedx --format json --spec-version 1.5
-    cp crates/cli/cli.cdx.json sbom.cdx.json
+    # cargo-cyclonedx writes <package-name>.cdx.json next to each Cargo.toml.
+    SBOM_SRC="${BIN_MANIFEST_DIR}/${BIN_PKG}.cdx.json"
+    if [ ! -f "$SBOM_SRC" ]; then
+        # Defensive glob: list what was actually produced so the error is actionable.
+        FOUND=$(find crates .ckeletin -name '*.cdx.json' 2>/dev/null | tr '\n' ' ')
+        echo "Error: expected SBOM at '${SBOM_SRC}' but it was not found." >&2
+        echo "  cargo-cyclonedx produced: ${FOUND:-<nothing>}" >&2
+        echo "  Check that cargo-cyclonedx version is compatible and re-run." >&2
+        exit 1
+    fi
+    cp "$SBOM_SRC" sbom.cdx.json
     find crates .ckeletin -name '*.cdx.json' -delete
     echo "Wrote sbom.cdx.json (CycloneDX 1.5)"
 
