@@ -314,6 +314,8 @@ fn collect_path_anchors(req: &RequirementMapping) -> Vec<String> {
 /// A token is considered a file path when it:
 ///   - contains `/`
 ///   - ends in `.rs`, `.toml`, `.yaml`, `.yml`, `.json`, `.md`, `.txt`
+///     OR is of the form `<path>::<symbol>` where the path part ends in one
+///     of those extensions (e.g. `crates/domain/src/logging.rs::validate_level`)
 ///   - does NOT start with `http`
 fn tokenize_anchors(text: &str) -> Vec<String> {
     let extensions = [".rs", ".toml", ".yaml", ".yml", ".json", ".md", ".txt"];
@@ -330,8 +332,20 @@ fn tokenize_anchors(text: &str) -> Vec<String> {
         if token.starts_with("http") {
             continue;
         }
-        if token.contains('/') && extensions.iter().any(|ext| token.ends_with(ext)) {
+        if !token.contains('/') {
+            continue;
+        }
+        // Plain path: token itself ends with a known extension.
+        if extensions.iter().any(|ext| token.ends_with(ext)) {
             tokens.push(token.to_string());
+            continue;
+        }
+        // Symbol reference: `<path>::<symbol>` — check the path part.
+        if let Some(pos) = token.rfind("::") {
+            let path_part = &token[..pos];
+            if extensions.iter().any(|ext| path_part.ends_with(ext)) {
+                tokens.push(token.to_string());
+            }
         }
     }
     tokens
@@ -1171,6 +1185,79 @@ mod tests {
                 .iter()
                 .any(|(_, msg)| msg.contains("dangling_does_not_exist.rs")),
             "a nonexistent violation_test path must be reported as dangling"
+        );
+    }
+
+    // ── Dangling anchor: path.rs::symbol tokenization (item 4) ────
+
+    #[test]
+    fn tokenize_anchors_recognizes_rs_symbol_tokens() {
+        // file.rs::symbol must be included so the symbol check is reachable.
+        let tokens =
+            tokenize_anchors("see crates/domain/src/logging.rs::validate_level for details");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| t == "crates/domain/src/logging.rs::validate_level"),
+            "path::symbol token must be collected; got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn dangling_anchor_detects_missing_symbol_via_rs_symbol_token() {
+        // Write a temp .rs file with a known extension (required for tokenizer),
+        // then reference a symbol that does not appear in it.
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("fixture.rs");
+        std::fs::write(&file_path, "fn real_symbol() {}\n").unwrap();
+        let path_str = file_path.to_str().unwrap().to_string();
+        let anchor = format!("{path_str}::nonexistent_symbol_xyz");
+        let mut mapping = BTreeMap::new();
+        mapping.insert(
+            "CKSPEC-TEST-996".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                evidence: anchor,
+                checks: vec![format!("test -f {path_str}")],
+                ..Default::default()
+            },
+        );
+        let dangling = find_dangling_anchors(&mapping);
+        assert!(
+            !dangling.is_empty(),
+            "a path.rs::symbol anchor where the symbol is absent must be flagged as dangling"
+        );
+        assert!(
+            dangling
+                .iter()
+                .any(|(_, msg)| msg.contains("nonexistent_symbol_xyz")),
+            "dangling message must name the missing symbol; got: {dangling:?}"
+        );
+    }
+
+    #[test]
+    fn dangling_anchor_passes_for_valid_rs_symbol_token() {
+        // Write a temp .rs file with a known symbol; path::symbol anchor must
+        // not be flagged when both the file and symbol exist.
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("fixture.rs");
+        std::fs::write(&file_path, "fn existing_symbol() {}\n").unwrap();
+        let path_str = file_path.to_str().unwrap().to_string();
+        let anchor = format!("{path_str}::existing_symbol");
+        let mut mapping = BTreeMap::new();
+        mapping.insert(
+            "CKSPEC-TEST-995".to_string(),
+            RequirementMapping {
+                status: "met".to_string(),
+                evidence: anchor,
+                checks: vec![format!("test -f {path_str}")],
+                ..Default::default()
+            },
+        );
+        let dangling = find_dangling_anchors(&mapping);
+        assert!(
+            dangling.is_empty(),
+            "a valid path.rs::symbol anchor must not be flagged; got: {dangling:?}"
         );
     }
 
