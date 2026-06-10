@@ -70,6 +70,49 @@ crates/
 
 **Tags work for the version argument:** `just ckeletin-update v0.2.18` resolves the tag via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`.
 
+## ckeletin-project.toml — Project-Owned Conformance Config
+
+`ckeletin-project.toml` at the workspace root is the **project-owned** file where you declare your layer layout and allowlists.  It lives outside `.ckeletin/` and is **never touched by `just ckeletin-update`**.  This is the SSOT for everything you need to tailor — never edit `.ckeletin/crate/tests/arch_allowlist.rs` or `.ckeletin/crate/tests/violation_drift_guard.rs` (they are framework-owned and clobbered on every update).
+
+### Sections
+
+**`[layers]`** — paths of your layer crates relative to the workspace root.  List form is supported for projects with multiple domain crates:
+
+```toml
+[layers]
+domain = ["crates/domain"]          # or ["chat-core", "chat-models"]
+infrastructure = ["crates/infrastructure"]
+cli = ["crates/cli"]
+```
+
+**`[allowlists]`** — complete `[dependencies]` sections allowed for each layer.  The scaffold ships with `domain = ["serde"]` and `infrastructure = ["ckeletin"]`.  Add to these lists when your domain legitimately needs more deps — use TOML comments as justifications:
+
+```toml
+[allowlists]
+# serde: typed serialization for domain result types (CKSPEC-ARCH-004)
+# thiserror: typed error definitions (returns data, never panics)
+domain = ["serde", "thiserror"]
+# ckeletin: framework crate re-export (CKSPEC-ARCH-005)
+infrastructure = ["ckeletin"]
+```
+
+**`[violation_tests]`** — controls the drift guard.  Set `enabled = false` with a comment if your layout doesn't carry trybuild violation test copies:
+
+```toml
+[violation_tests]
+# This project enforces boundaries via Cargo.toml alone; no trybuild copies.
+enabled = false
+```
+
+### Behavior matrix
+
+| Condition | What the conformance tests do |
+|-----------|-------------------------------|
+| `ckeletin-project.toml` present | Enforce strictly per declared layout and allowlists |
+| File absent + `crates/domain` exists | Enforce scaffold strict defaults (`domain=["serde"]`) |
+| File absent + no scaffold layout | Skip loudly — print a nudge naming `ckeletin-project.toml` |
+| File present but malformed TOML | Hard error — never silenced |
+
 ## Commands
 
 | Scenario | Command |
