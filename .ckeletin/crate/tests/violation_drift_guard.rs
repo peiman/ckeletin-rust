@@ -118,6 +118,18 @@ fn vendored_violation_tests_are_byte_identical_to_project_copies() {
     }
 
     let pairs = violation_file_pairs(&root, config);
+    // Zero pairs is legal (a consumer layout that carries no project copies
+    // of the violation tests has nothing to compare) — but say so loudly
+    // rather than green-lighting in silence, consistent with the skip paths
+    // above.
+    if pairs.is_empty() {
+        eprintln!(
+            "SKIP vendored_violation_tests_are_byte_identical_to_project_copies: \
+             no vendored/project violation-test pairs found for the declared \
+             layers — nothing to compare."
+        );
+        return;
+    }
     let mut failures: HashMap<String, String> = HashMap::new();
 
     for (vendored_path, active_path) in &pairs {
