@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.22] - 2026-06-10
 
 ### Added
 - **`ckeletin-project.toml` — project-owned conformance config** (root file,
