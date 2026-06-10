@@ -1,5 +1,72 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+### Added
+- **`ckeletin-project.toml` — project-owned conformance config** (root file,
+  survives `just ckeletin-update`).  Consumers declare their layer crate paths,
+  per-layer dependency allowlists, and violation test preferences here.  This
+  is the ONLY place to tailor conformance; never edit `.ckeletin/crate/tests/`
+  files (they are replaced on every update).
+
+  Schema:
+  - `[layers]` — `domain`, `infrastructure`, `cli` as single strings or lists
+    (multi-crate domain is supported: `domain = ["chat-core", "chat-models"]`).
+  - `[allowlists]` — complete `[dependencies]` allowed per layer.  Scaffold
+    defaults: `domain = ["serde"]`, `infrastructure = ["ckeletin"]`.
+    Use TOML comments above each entry as the justification mechanism.
+  - `[violation_tests]` — `enabled = true/false`, optional `domain_dirs` /
+    `infra_dirs` for non-scaffold layouts.
+
+- **`project_config` module** (`.ckeletin/crate/src/project_config.rs`): pure
+  loader for `ckeletin-project.toml` using figment's Toml provider (no new
+  deps — figment was already in `[dependencies]`).  Returns one of three
+  outcomes: `Explicit` (file present), `ScaffoldDefaults` (file absent but
+  `crates/domain` present), `Absent` (neither — callers skip loudly).
+  Malformed TOML is a hard error, never silenced.
+
+- **Behavior matrix in `arch_allowlist.rs` and `violation_drift_guard.rs`**:
+  both tests now load from `project_config::load()` instead of hardcoding the
+  scaffold layout.  A consumer with custom layer names and a missing
+  `ckeletin-project.toml` gets a loud skip nudge — not a panic, not a false
+  failure.  The framework-crate self-check (`.ckeletin/crate` must not contain
+  CLI frameworks) remains hardcoded — it is a framework fact, true everywhere.
+
+- **Hermetic consumer-layout fixture tests** (`.ckeletin/crate/tests/
+  consumer_layout_fixtures.rs`): 11 in-process tests covering all matrix paths
+  (custom layout + config pass/fail, absent config with/without scaffold,
+  declared-but-missing layer, multi-crate domain, violation tests disabled).
+
+### Consumer migration note (after updating past 0.2.21)
+
+If you hand-patched `.ckeletin/crate/tests/arch_allowlist.rs` to extend
+`DOMAIN_ALLOWED_DEPS` or added skip-guards — those changes are clobbered by
+this update by design.  Move them to `ckeletin-project.toml` at your repo root:
+
+```toml
+# ckeletin-project.toml
+[layers]
+domain = ["crates/domain"]          # or your actual layer paths
+infrastructure = ["crates/infrastructure"]
+cli = ["crates/cli"]
+
+[allowlists]
+# Add each dep with a comment justifying it.
+# Example (workhorse — 8 justified domain deps):
+#   serde_json: JSON serialization for API responses
+#   serde_yaml: YAML config deserialization
+#   indexmap: ordered map for stable output
+#   regex: pattern matching in domain rules
+#   chrono: timestamp types in domain events
+#   thiserror: typed error definitions
+#   sha2: content hashing for deduplication
+domain = ["serde", "serde_json", "serde_yaml", "indexmap", "regex", "chrono", "thiserror", "sha2"]
+infrastructure = ["ckeletin"]
+```
+
+The file is yours — it lives outside `.ckeletin/` and survives every future
+`just ckeletin-update`.
+
 ## [0.2.21] - 2026-06-10
 
 ### Fixed
