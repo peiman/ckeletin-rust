@@ -1,5 +1,27 @@
 # ckeletin Framework Changelog
 
+## [0.2.21] - 2026-06-10
+
+### Fixed
+- **`validate_level` is case-insensitive** — `INFO`, `Warn`, `OFF` are accepted
+  again (the 0.2.19 strict validation rejected anything non-lowercase, breaking
+  previously-valid configs). The value is lowercased before reaching `EnvFilter`.
+- **`ckeletin-check-update` upstream-repo guard honors `json` format** — emits
+  `{"applicable": false, "reason": "upstream repository"}` instead of prose, so
+  the machine-readable contract holds in the upstream repo too.
+- **Conform dangling-anchor gate now checks `path.rs::symbol` anchors** — the
+  tokenizer previously dropped them (token didn't end in an extension), making
+  the documented symbol check unreachable for evidence text.
+- **Audit log directory tightened to 0700 unconditionally** — a pre-existing
+  permissive log dir is now chmodded at init, not only freshly-created ones.
+  Side effect: a user-owned read-only log dir is self-healed (owners may always
+  chmod); dirs owned by another user (e.g. root after a sudo run) still fail
+  with a clean typed error. Doc-comment honestly notes rotation-created files
+  inherit the process umask until the next init.
+- **`init.sh` license advice corrected** — LICENSE-MIT copyright is editable;
+  LICENSE-APACHE must stay verbatim (its hash is pinned by `license_integrity`);
+  copyright notices belong in NOTICE/source headers per the license's own terms.
+
 ## [0.2.20] - 2026-06-10
 
 ### Added
