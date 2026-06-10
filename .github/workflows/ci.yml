@@ -51,7 +51,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --version 0.19.4 --locked
+        run: cargo install cargo-deny --version 0.19.8 --locked
 
       - name: Check advisories
         run: cargo deny check advisories
@@ -71,7 +71,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       - name: Install cargo-geiger
         run: cargo install cargo-geiger --version 0.13.0 --locked
@@ -101,10 +101,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --version 0.19.4 --locked
+        run: cargo install cargo-deny --version 0.19.8 --locked
 
       # SSOT: `just check` is the single gateway.
       # Same checks run locally (lefthook + just) and in CI.
@@ -136,7 +136,7 @@ jobs:
           key: ${{ runner.os }}-cargo-initsmoke-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       # Builds a fresh scaffold from `just init` in a temp dir and runs its full
       # test suite — catches a non-compiling project AND a mangled test file
@@ -168,10 +168,10 @@ jobs:
           key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --version 0.8.5 --locked
+        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       - name: Coverage (fails under 85%)
         run: just coverage
@@ -199,7 +199,7 @@ jobs:
           key: ${{ runner.os }}-cargo-conform-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       - name: Conformance generator
         run: just conform
@@ -251,7 +251,7 @@ jobs:
         run: cargo install cargo-cyclonedx --version 0.5.9 --locked
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version 1.52.0 --locked
 
       - name: Install grype
         run: |

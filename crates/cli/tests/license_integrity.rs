@@ -27,7 +27,13 @@ fn license_apache_matches_canonical_hash() {
 
     let mut hasher = Sha256::new();
     hasher.update(&contents);
-    let actual_hash = format!("{:x}", hasher.finalize());
+    // Hex-encode byte-by-byte: digest 0.11 dropped LowerHex on the output
+    // array, and this form is stable across digest versions.
+    let actual_hash: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     assert_eq!(
         actual_hash, CANONICAL_SHA256,
