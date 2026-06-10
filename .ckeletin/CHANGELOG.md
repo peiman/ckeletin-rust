@@ -1,6 +1,6 @@
 # ckeletin Framework Changelog
 
-## [Unreleased]
+## [0.2.26] - 2026-06-10
 
 ### Changed
 
@@ -15,9 +15,11 @@
 
   **Consumer note:** consumers' own crates keep their own edition — only the
   vendored `.ckeletin/crate` and `.ckeletin/conform` editions change.
-  `just check` compiles `.ckeletin/crate` at edition 2024, which requires
-  `rustc >= 1.85`. The toolchain floor in `rust-toolchain.toml` is 1.96, so
-  existing consumers already satisfy this requirement.
+  `just check` compiles `.ckeletin/crate` at edition 2024 (requires
+  `rustc >= 1.85`), and the framework code now uses let-chains (stable since
+  1.88) — so the effective consumer toolchain floor is `rustc >= 1.88`. The
+  scaffolded `rust-toolchain.toml` pin is 1.96, so existing consumers already
+  satisfy this.
 
 ## [0.2.25] - 2026-06-10
 
