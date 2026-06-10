@@ -462,11 +462,7 @@ fn parse_conformance_md_header(path: &str) -> Result<(String, usize), String> {
                     .chars()
                     .take_while(|c| c.is_ascii_digit() || *c == '.')
                     .collect();
-                if ver.is_empty() {
-                    None
-                } else {
-                    Some(ver)
-                }
+                if ver.is_empty() { None } else { Some(ver) }
             } else {
                 None
             }
@@ -484,13 +480,11 @@ fn parse_conformance_md_header(path: &str) -> Result<(String, usize), String> {
                     || *word == "requirements,"
                     || word.starts_with("requirements"))
                     && i > 0
-                {
-                    if let Ok(n) = parts[i - 1]
+                    && let Ok(n) = parts[i - 1]
                         .trim_matches(|c: char| !c.is_ascii_digit())
                         .parse::<usize>()
-                    {
-                        return Some(n);
-                    }
+                {
+                    return Some(n);
                 }
             }
             None
@@ -796,13 +790,12 @@ fn main() {
             if !json_mode {
                 let icon = if passed { "ok" } else { "FAIL" };
                 println!("  {req_id:<20} {check_cmd} ... {icon}");
-                if !passed {
-                    if let Some(out) = &failure_output {
-                        if !out.trim().is_empty() {
-                            for line in out.lines() {
-                                println!("    | {line}");
-                            }
-                        }
+                if !passed
+                    && let Some(out) = &failure_output
+                    && !out.trim().is_empty()
+                {
+                    for line in out.lines() {
+                        println!("    | {line}");
                     }
                 }
             }
@@ -973,11 +966,7 @@ fn current_date() -> String {
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
+            if s.is_empty() { None } else { Some(s) }
         })
         .unwrap_or_else(|| "unknown".to_string())
 }
@@ -1173,7 +1162,7 @@ mod tests {
             RequirementMapping {
                 status: "met".to_string(),
                 violation_tests: vec![
-                    "crates/domain/tests/violations/dangling_does_not_exist.rs".to_string()
+                    "crates/domain/tests/violations/dangling_does_not_exist.rs".to_string(),
                 ],
                 violation_evidence: Some("trybuild tests".to_string()),
                 ..Default::default()

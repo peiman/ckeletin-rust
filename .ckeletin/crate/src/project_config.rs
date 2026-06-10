@@ -23,8 +23,8 @@
 use std::path::{Path, PathBuf};
 
 use figment::{
-    providers::{Format, Toml},
     Figment,
+    providers::{Format, Toml},
 };
 use serde::{Deserialize, Serialize};
 

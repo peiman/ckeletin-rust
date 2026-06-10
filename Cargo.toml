@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 # MSRV — kept in lockstep with rust-toolchain.toml's pinned channel so the
 # minimum supported Rust is machine-declared, not just implied by CI.
 rust-version = "1.96"

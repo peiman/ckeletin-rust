@@ -7,7 +7,7 @@
 //! without conflicting with other test files that also set the global
 //! tracing subscriber.
 
-use ckeletin::logging::{init, LogConfig};
+use ckeletin::logging::{LogConfig, init};
 use std::fs;
 
 #[cfg(unix)]
