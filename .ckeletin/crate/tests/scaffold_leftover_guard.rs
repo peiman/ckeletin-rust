@@ -345,3 +345,45 @@ repository = "https://github.com/peiman/myapp"
         "Message must explain remediation: {msg}"
     );
 }
+
+// ── the real-tree gate (Finding 5, consumer-feedback-2026-06-10.md) ──────────
+//
+// Everything above runs against hermetic fixtures, which proves the scan LOGIC
+// — but a guard that never scans the repo it ships in protects nobody. ioguard
+// proved it: `just check` passed green on 0.2.24 while its release.yml still
+// contained `target/release/ckeletin-rust`, the exact leftover that ate its
+// v0.1.0 release artifacts. This test is the missing call site: it scans the
+// REAL workspace this test suite runs in, exactly like arch_allowlist.rs does.
+// On the upstream repo it skips (the literal is legitimate there); in every
+// consumer repo it is the gate that goes red until the tree is clean.
+
+/// Resolve the workspace root from CARGO_MANIFEST_DIR (.ckeletin/crate).
+fn workspace_root() -> std::path::PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .ckeletin/crate
+    std::path::Path::new(manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf()
+}
+
+#[test]
+fn this_repos_real_tree_has_no_scaffold_leftovers() {
+    match scaffold_scan::scan_for_leftovers(&workspace_root()) {
+        scaffold_scan::ScanOutcome::Upstream => {
+            eprintln!(
+                "SKIP this_repos_real_tree_has_no_scaffold_leftovers: \
+                 upstream repo — the ckeletin-rust literal is legitimate here."
+            );
+        }
+        scaffold_scan::ScanOutcome::Clean => {}
+        scaffold_scan::ScanOutcome::Leftovers(hits) => {
+            panic!(
+                "scaffold identity leftovers found in THIS repo's tree \
+                 (this class silently published zero release artifacts for \
+                 ioguard v0.1.0 — fix before it fails at release time):\n{}",
+                hits.join("\n")
+            );
+        }
+    }
+}
