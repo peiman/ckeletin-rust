@@ -37,7 +37,6 @@ tracing-appender = "0.2"
 thiserror = "2"
 
 # Terminal styling
-owo-colors = "4"
 
 # Dev dependencies
 assert_cmd = "2"
