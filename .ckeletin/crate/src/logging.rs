@@ -151,10 +151,18 @@ pub fn resolve_audit_path(configured: &str, location: &str, app: &str) -> PathBu
 ///   existing directory — the case that previously caused a panic via
 ///   `tracing_appender::rolling::daily`).
 ///
-/// On Unix the log directory is created with mode 0700 and the appender
+/// On Unix the log directory is set to mode 0700 unconditionally (even when it
+/// already exists, to tighten a pre-existing 0755 dir) and the appender
 /// pre-creates the initial log file with mode 0600 so audit contents are
 /// not world-readable. (CKSPEC-OUT-004 mandates shadow logging; narrowed
 /// permissions are appropriate for a per-user audit stream.)
+///
+/// **Rotation-created files:** `tracing-appender`'s daily roller creates new
+/// files on each UTC day boundary. Those files inherit the process umask until
+/// the next `prepare_file_appender` call (i.e. next binary restart). The 0600
+/// chmod below only applies to files present at init time. For a tighter
+/// guarantee, set a restrictive umask (e.g. `umask 0077`) before launching the
+/// binary, or run a periodic job to rechmod the log directory.
 fn prepare_file_appender(
     file_path: &str,
 ) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), std::io::Error> {
@@ -178,13 +186,18 @@ fn prepare_file_appender(
         .to_string();
 
     // Create the directory with restricted permissions (Unix: 0700).
+    // DirBuilder::mode only applies to newly-created directories; tighten
+    // pre-existing directories with set_permissions unconditionally.
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
+        use std::os::unix::fs::PermissionsExt;
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(log_dir)?;
+        // Unconditional: tightens a pre-existing 0755 dir to 0700.
+        let _ = std::fs::set_permissions(log_dir, std::fs::Permissions::from_mode(0o700));
     }
     #[cfg(not(unix))]
     {
