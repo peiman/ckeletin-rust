@@ -37,13 +37,17 @@ impl Default for LogConfig {
 /// Validate that `level` is a bare log-level string (trace/debug/info/warn/error/off).
 /// Returns `Ok(())` when valid, `Err` with a descriptive message otherwise.
 ///
+/// Matching is **case-insensitive** so `CKELETIN_LOG_LEVEL=INFO` works the same
+/// as `info`. EnvFilter accepts lowercase level strings; the lowercased value is
+/// passed on to `build_filter` to keep parsing predictable.
+///
 /// "off" is always valid — it is used internally to suppress the console stream
 /// in JSON mode. Non-level directive strings (e.g. `target=debug`) are rejected:
 /// the shadow-log contract (CKSPEC-OUT-004) depends on the file level filtering
 /// predictably, and a target directive that parses successfully but suppresses
 /// `ckeletin::output` events silently kills the audit stream.
 fn validate_level(level: &str) -> Result<(), std::io::Error> {
-    match level {
+    match level.to_ascii_lowercase().as_str() {
         "trace" | "debug" | "info" | "warn" | "error" | "off" => Ok(()),
         _ => Err(std::io::Error::other(format!(
             "invalid log level {:?}: expected one of trace, debug, info, warn, error, off",
@@ -55,7 +59,9 @@ fn validate_level(level: &str) -> Result<(), std::io::Error> {
 /// Build an EnvFilter from a validated level string.
 fn build_filter(level: &str) -> EnvFilter {
     // Caller has already validated; EnvFilter::new on a bare level cannot fail.
-    EnvFilter::new(level)
+    // Lowercase so EnvFilter always receives a canonical form regardless of
+    // what case the user supplied (e.g. CKELETIN_LOG_LEVEL=INFO).
+    EnvFilter::new(level.to_ascii_lowercase())
 }
 
 /// Read an environment variable as an absolute path, if set and absolute.
@@ -323,6 +329,32 @@ mod tests {
     }
 
     // ── build_filter validation tests ──────────────────────────
+
+    #[test]
+    fn validate_level_is_case_insensitive() {
+        // CKELETIN_LOG_LEVEL=INFO must not abort the binary — EnvFilter accepted
+        // any case before the validate_level gate was introduced; the gate must
+        // preserve that acceptance.
+        for level in &["INFO", "Warn", "OFF", "DEBUG", "TRACE", "ERROR"] {
+            let result = validate_level(level);
+            assert!(
+                result.is_ok(),
+                "uppercase level {:?} must be accepted by validate_level",
+                level
+            );
+        }
+    }
+
+    #[test]
+    fn build_filter_lowercases_before_passing_to_envfilter() {
+        // EnvFilter format string should be lowercase regardless of input case.
+        let filter = build_filter("INFO");
+        assert_eq!(
+            format!("{filter}"),
+            "info",
+            "build_filter must lowercase the level string for EnvFilter"
+        );
+    }
 
     #[test]
     fn build_filter_rejects_invalid_console_level() {
