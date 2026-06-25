@@ -243,7 +243,20 @@ ckeletin-geiger:
 # Add such a crate when you want continuous coverage-guided fuzzing — see
 # https://github.com/camshaft/bolero. Install: cargo install cargo-bolero --locked.
 ckeletin-fuzz:
-    cargo test --workspace --test fuzz_ping
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Discover `fuzz_*` integration tests rather than hardcoding the example
+    # target: a derived project that replaces the `ping` worked example keeps a
+    # working fuzz gate without editing this framework-owned recipe.
+    targets=$(find crates -type f -path '*/tests/fuzz_*.rs' -exec basename {} .rs ';' | sort -u)
+    if [ -z "$targets" ]; then
+        echo "no fuzz_*.rs integration tests found under crates/*/tests — nothing to fuzz"
+        exit 0
+    fi
+    for t in $targets; do
+        echo "==> cargo test --workspace --test $t"
+        cargo test --workspace --test "$t"
+    done
 
 # Check if a newer framework version is available. Pass `json` for a
 # machine-readable verdict ({"current","latest","update_available"}) — the
