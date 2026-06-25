@@ -1,9 +1,9 @@
-# Ckeletin Spec v0.8.0 — Rust Conformance Report
+# Ckeletin Spec v0.9.0 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.8.0
-**Report date:** 2026-06-10
-**Total:** 40 requirements — 40 met
+**Spec version:** 0.9.0
+**Report date:** 2026-06-25
+**Total:** 41 requirements — 41 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable
 source of truth) and is validated by `just conform` (`.ckeletin/conform/`),
@@ -120,6 +120,7 @@ continues to refine the spec.
 | CKSPEC-AGENT-004 | Agent guide completeness | met | Covers purpose, architecture, commands, conventions, testing, troubleshooting |
 | CKSPEC-AGENT-005 | CLI as the agent interface | met | `--output json` machine-readable mode; no protocol layer required |
 | CKSPEC-AGENT-006 | Machine-readable command catalog | met | `catalog` command emits the cross-impl schema via the OUT-002 envelope, derived from the clap command tree |
+| CKSPEC-AGENT-007 | Scaffold artifact ownership boundary | met | `init.sh` strips upstream-only evidence/prose at scaffold time, keeps `.ckeletin/` + `ckeletin-project.toml`, and keeps upstream-only-applicability artifacts inert (slug-guarded conform recipes, `github.repository`-gated spec-drift); asserted by `init_smoke` |
 
 ---
 

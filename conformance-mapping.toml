@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.8.0"
+spec_version = "0.9.0"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
@@ -154,10 +154,10 @@ violation_evidence = "Unit tests anchored_met_passes / unanchored_met_is_rejecte
 title = "Conformance gate on release"
 status = "met"
 enforcement_level = "ci"
-evidence = "The tag-triggered release workflow (.github/workflows/release.yml) gates its publish step on the conform job (`needs: conform`), so no release proceeds while conformance fails. A tag-version reconciliation step asserts the pushed tag (vX.Y.Z) equals the cli package CARGO_PKG_VERSION — preventing the historical incident where v0.2.0 was cut from package version 0.1.0. A scheduled spec-drift job continuously checks the live spec_version against the vendored one and opens an issue when upstream advances."
+evidence = "The tag-triggered release workflow (.github/workflows/release.yml) gates its publish step on the conform job (`needs: conform`), so no release proceeds while conformance fails. A tag-version reconciliation step asserts the pushed tag (vX.Y.Z) equals the cli package CARGO_PKG_VERSION — preventing the historical incident where v0.2.0 was cut from package version 0.1.0. A scheduled spec-drift job continuously checks the live spec_version against the vendored one and opens an issue when upstream advances. The gate declares its SUBJECT (ENF-009 v0.9.0): the conform recipes (.ckeletin/Justfile) exit 0 with a subject announce when the upstream slug `peiman/ckeletin-rust` is absent from Cargo.toml (a derived project), and the upstream-only spec-drift CI job is gated on `github.repository == 'peiman/ckeletin-rust'` — so an inherited gate in a consumer declares it verified nothing rather than blocking that project's release or passing silently as proven conformance."
 checks = []
 violation_tests = []
-violation_evidence = ".github/workflows/release.yml gates release on the conform job; the tag-version step fails the release when the tag and package version disagree; .github/workflows/ci.yml runs `just conform`; the spec-drift detector job surfaces upstream advances so drift is caught between releases."
+violation_evidence = ".github/workflows/release.yml gates release on the conform job; the tag-version step fails the release when the tag and package version disagree; .github/workflows/ci.yml runs `just conform`; the spec-drift detector job surfaces upstream advances so drift is caught between releases. Subject declaration: the conform recipes in .ckeletin/Justfile short-circuit (exit 0 + announce) on absence of the upstream slug, and spec-drift.yml is `github.repository`-gated — proven by the conform_guard integration test that a derived project's `just conform` no-ops and declares its subject."
 
 [requirements.CKSPEC-ENF-010]
 title = "Published machine-readable conformance report"
@@ -234,10 +234,10 @@ violation_evidence = "crates/cli/tests/cli.rs ping_json_mode_* and json_mode_err
 title = "Standardized output envelope"
 status = "met"
 enforcement_level = "script"
-evidence = "Envelope struct: status, command, data, error. Unit tests verify serialization."
+evidence = "Envelope struct emits all four keys (status, command, data, error) as a TOTAL schema (OUT-003 v0.9.0): no skip_serializing_if, so an absent value (data on error, error on success) serializes as JSON null, never omitted. Unit tests assert present-and-null — `data` is present and null on error, `error` is present and null on success."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
-violation_evidence = ".ckeletin/crate/src/output.rs envelope_* unit tests assert the {status, command, data, error} envelope shape and serialization; a regression fails them in CI (`just check`)."
+violation_evidence = ".ckeletin/crate/src/output.rs envelope_* unit tests assert the {status, command, data, error} total envelope shape (every key present; absent value is JSON null, not omitted); a regression fails them in CI (`just check`)."
 
 [requirements.CKSPEC-OUT-004]
 title = "Shadow logging"
@@ -323,6 +323,15 @@ evidence = "A `catalog` command emits the cross-impl catalog schema via the OUT-
 checks = ["cargo test -p cli --test cli catalog"]
 violation_tests = []
 violation_evidence = "The catalog is derived from the SAME clap Command tree the parser uses, so it cannot drift from the command set (anti-drift is structural). crates/cli/tests/cli.rs catalog_* tests assert the emitted catalog is a valid OUT-002 success envelope that lists every subcommand (incl. catalog itself) with global flags carrying takes_value; framework unit tests in .ckeletin/crate/src/catalog.rs cover serialization. A regression fails them in CI (`just check`)."
+
+[requirements.CKSPEC-AGENT-007]
+title = "Scaffold artifact ownership boundary"
+status = "met"
+enforcement_level = "script"
+evidence = "init (.ckeletin/scripts/init.sh) strips upstream-only artifacts at scaffold time — generated conformance evidence (CONFORMANCE.md, conformance-mapping.toml, conformance-report.json, conformance/) and upstream-only prose (docs/, code-review-*, consumer-feedback-*, dogfooding-feedback-*) — while keeping framework-owned .ckeletin/ and consumer-owned ckeletin-project.toml. Framework-owned-but-upstream-only artifacts are kept INERT rather than stripped: the conform recipes exit 0 with a subject announce when the upstream slug is absent from Cargo.toml, and spec-drift.yml is gated on `github.repository == 'peiman/ckeletin-rust'`."
+checks = ["cargo test -p ckeletin --test init_smoke -- --ignored"]
+violation_tests = []
+violation_evidence = ".ckeletin/scripts/init.sh (the strip step) and .ckeletin/crate/tests/init_smoke.rs, which asserts after init that the upstream-only artifacts are absent and .ckeletin/ + ckeletin-project.toml are retained; a regression fails the init-smoke CI job."
 
 # ═══════════════════════════════════════════════════════════════
 # Changelog (CKSPEC-CL-001 through CKSPEC-CL-007)
