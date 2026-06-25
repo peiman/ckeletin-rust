@@ -13,13 +13,16 @@ pub enum Status {
 ///
 /// Uses `serde_json::Value` for the data field so any Serialize type
 /// can be wrapped without generics or lifetime complexity.
+///
+/// TOTAL schema (CKSPEC-OUT-003): all four keys are always serialized.
+/// An absent value (`data` on error, `error` on success) is emitted as JSON
+/// `null`, never omitted — a consumer parses every envelope with one fixed
+/// key set. Hence no `skip_serializing_if` on `data`/`error`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Envelope {
     pub status: Status,
     pub command: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -174,8 +177,9 @@ mod tests {
         assert_eq!(json["status"], "success");
         assert_eq!(json["command"], "ping");
         assert_eq!(json["data"]["message"], "pong");
-        // error field should be absent (skip_serializing_if)
-        assert!(json.get("error").is_none());
+        // error key is always present; null on success (total envelope, OUT-003)
+        assert!(json.get("error").is_some(), "error key must be present");
+        assert!(json["error"].is_null(), "error must be null on success");
     }
 
     #[test]
@@ -185,8 +189,9 @@ mod tests {
         assert_eq!(json["status"], "error");
         assert_eq!(json["command"], "ping");
         assert_eq!(json["error"], "connection failed");
-        // data field should be absent
-        assert!(json.get("data").is_none());
+        // data key is always present; null on error (total envelope, OUT-003)
+        assert!(json.get("data").is_some(), "data key must be present");
+        assert!(json["data"].is_null(), "data must be null on error");
     }
 
     #[test]
