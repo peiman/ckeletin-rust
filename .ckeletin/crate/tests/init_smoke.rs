@@ -135,6 +135,48 @@ fn init_produces_committed_compilable_project() {
         "ping.rs (worked example) should be retained after init"
     );
 
+    // Export boundary (spec issue #30 / FB-002): init MUST strip ckeletin-rust's
+    // OWN upstream-only artifacts so a derived project never presents inherited
+    // reference-impl truth as its own. Generated conformance evidence
+    // (regenerable; `just conform` no-ops in a consumer) and framework
+    // working-docs must be gone after init.
+    for rel in [
+        "CONFORMANCE.md",
+        "conformance-mapping.toml",
+        "conformance-report.json",
+        "conformance",
+        "docs",
+    ] {
+        assert!(
+            !project_dir.join(rel).exists(),
+            "init.sh left upstream-only artifact `{rel}` in the derived project"
+        );
+    }
+    let leftover_docs: Vec<String> = std::fs::read_dir(&project_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| {
+            n.ends_with(".md")
+                && (n.starts_with("code-review-")
+                    || n.starts_with("consumer-feedback-")
+                    || n.starts_with("dogfooding-feedback-"))
+        })
+        .collect();
+    assert!(
+        leftover_docs.is_empty(),
+        "init.sh left upstream-only working docs in the derived project: {leftover_docs:?}"
+    );
+    // The consumer-owned config seam and the framework dir MUST survive.
+    assert!(
+        project_dir.join("ckeletin-project.toml").exists(),
+        "ckeletin-project.toml (consumer-owned) must survive init"
+    );
+    assert!(
+        project_dir.join(".ckeletin").is_dir(),
+        ".ckeletin (framework-owned) must survive init"
+    );
+
     // Scaffold-leftover guard: the initialized project has no upstream
     // fingerprint, so it runs in consumer mode. Assert ZERO leftovers remain
     // in functional files — this catches any scaffolded file that init.sh

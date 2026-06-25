@@ -95,6 +95,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 CHANGELOG
 
+# 5b. Strip upstream-only artifacts (scaffold export boundary — spec issue #30,
+#     FB-002). A derived project must not inherit ckeletin-rust's OWN conformance
+#     evidence or framework working-docs as if they described THIS project:
+#       - generated conformance evidence — regenerable, and `just conform`
+#         no-ops in a consumer, so a stale inherited report is worse than none;
+#       - upstream-only prose — code reviews, consumer/dogfooding feedback, and
+#         the framework's own spec-feedback / plans / specs under docs/.
+#     Framework-owned `.ckeletin/` and consumer-owned `ckeletin-project.toml` are
+#     deliberately KEPT. `rm -f`/`rm -rf` are no-ops if an artifact is absent.
+echo "Stripping upstream-only conformance evidence and framework working-docs..."
+rm -f CONFORMANCE.md conformance-mapping.toml conformance-report.json
+rm -rf conformance docs
+rm -f code-review-*.md consumer-feedback-*.md dogfooding-feedback-*.md
+
 # 6. Verify — compile ALL targets (lib, bin, AND tests) BEFORE resetting git
 #    history. Destroying git history and then failing is far worse than failing
 #    and leaving history intact. Checking only the default targets would miss a
