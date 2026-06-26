@@ -1,9 +1,9 @@
-# Ckeletin Spec v0.9.0 — Rust Conformance Report
+# Ckeletin Spec v0.10.0 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.9.0
-**Report date:** 2026-06-25
-**Total:** 41 requirements — 41 met
+**Spec version:** 0.10.0
+**Report date:** 2026-06-27
+**Total:** 42 requirements — 42 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable
 source of truth) and is validated by `just conform` (`.ckeletin/conform/`),
@@ -23,8 +23,8 @@ continues to refine the spec.
 > catalog — *met*). Conformance wave 2 also corrected several enforcement claims:
 > OUT-005 raised from `compile-time` to `linter` (clippy `print_stdout/print_stderr`
 > deny added to domain/infrastructure/.ckeletin/crate Cargo.toml); ARCH-006
-> corrected from `compile-time` to `design` (entry-point minimality is structural,
-> not compiler-enforced); ARCH-004 notes added clarifying intra-crate module
+> corrected from `compile-time` to `honor-system` (entry-point minimality is a
+> code-review judgment, not compiler-enforced); ARCH-004 notes added clarifying intra-crate module
 > boundary limits. New gates added: dangling evidence anchor detection, bidirectional
 > ENF-005 completeness (extra mapping entries also fail), CONFORMANCE.md header
 > sync check, dependency allowlist invariant tests, and violation-test drift guard.
@@ -40,16 +40,16 @@ continues to refine the spec.
 | CKSPEC-ARCH-003 | CLI framework isolation | met | compile-time | `domain_imports_clap.rs`, `infra_imports_clap.rs` |
 | CKSPEC-ARCH-004 | Business logic isolation | met | compile-time | `domain_imports_figment.rs`, `domain_imports_tracing.rs` (see note) |
 | CKSPEC-ARCH-005 | Infrastructure independence | met | compile-time | `infra_imports_domain.rs` |
-| CKSPEC-ARCH-006 | Entry point minimality | met | design | `crates/cli/src/main.rs` — bootstrap only (see note) |
-| CKSPEC-ARCH-007 | Package location enforcement | met | design | Structural (see note) |
+| CKSPEC-ARCH-006 | Entry point minimality | met | honor-system | `crates/cli/src/main.rs` — bootstrap only (see note) |
+| CKSPEC-ARCH-007 | Package location enforcement | met | structural | Structural (see note) |
 
 **Evidence:** `crates/domain/Cargo.toml` lists only `serde`. `crates/infrastructure/Cargo.toml` has no domain or cli dependency. Writing `use clap::Parser` in domain → compiler error E0432. Seven trybuild compile-fail tests (five domain + two infra) verify the boundaries on every `cargo test`. Dependency allowlist invariant tests in `.ckeletin/crate/tests/arch_allowlist.rs` make adding a forbidden dep a loud CI failure.
 
 **ARCH-004 note:** the compile-time claim applies to the cross-crate boundary — domain cannot import infrastructure/cli, enforced by Cargo. Intra-crate module isolation within the single `domain` crate is enforced at design level: Rust cannot cheaply compile-time-enforce intra-crate module boundaries. The multi-crate split is the documented upgrade path when domain grows. Routed to spec feedback (Wave 4) for requirement calibration.
 
-**ARCH-006 note (corrected):** `main.rs` is the bootstrap entry — argument parsing, config loading, logging init, and dispatch. Feature logic lives in domain; the entry contains no business logic. Enforcement is `design`, not `compile-time` — the compiler enforces that only cli has a bin target, but cannot enforce that `main.rs` stays minimal; that is a code-review and coverage judgment.
+**ARCH-006 note (corrected):** `main.rs` is the bootstrap entry — argument parsing, config loading, logging init, and dispatch. Feature logic lives in domain; the entry contains no business logic. Enforcement is `honor-system`, not `compile-time` — the compiler enforces that only cli has a bin target, but cannot enforce that `main.rs` stays minimal; that is a code-review and coverage judgment.
 
-**ARCH-007 note:** file placement is enforced structurally by the Cargo workspace layout — a stray `.rs` file at the workspace root belongs to no crate and is not built — not by a dedicated file-placement linter. Enforcement level is therefore `design`, not `compile-time`.
+**ARCH-007 note:** file placement is enforced structurally by the Cargo workspace layout — a stray `.rs` file at the workspace root belongs to no crate and is not built — not by a dedicated file-placement linter. Enforcement level is therefore `structural`, not `compile-time`.
 
 ---
 
@@ -67,6 +67,7 @@ continues to refine the spec.
 | CKSPEC-ENF-008 | Anchored conformance evidence | met | `just conform` **exits non-zero** on any `met` requirement with no check, violation test, or written `violation_evidence`; unit tests `anchored_met_passes` / `unanchored_met_is_rejected` |
 | CKSPEC-ENF-009 | Conformance gate on release | met | `.github/workflows/release.yml` gates `publish` on the `conform` job (`needs:`); scheduled `spec-drift.yml` watches the live spec |
 | CKSPEC-ENF-010 | Published machine-readable conformance report | met | Deterministic `conformance-report.json` projected from the mapping; `just conform` sync-checks it (fails on drift); unit tests `report_projection_is_deterministic` / `sync_check_detects_drift` |
+| CKSPEC-ENF-011 | Tooling robustness to nested checkouts | met | Bounded scanners (no recursive walk) cannot descend into nested checkouts; `scaffold_scan::collect_scan_targets` is a fixed collector and conform does no tree walk — immune by construction |
 
 **Generator:** `just conform` runs the `ckeletin-conform` crate (`.ckeletin/conform/`). It loads the committed `conformance/requirements.json` snapshot (hermetic — no network; `--refresh` re-fetches from the spec repo), checks both completeness directions (ENF-005), enforces the anchoring gate (ENF-008), validates dangling evidence anchors (file paths and test symbols), sync-checks the published report (ENF-010), checks CONFORMANCE.md header version/count, runs each mapped check with failure output surfaced, verifies declared violation-test files exist (ENF-006), and emits feedback signals (ENF-007). Gated by the CI `conform` job.
 
@@ -149,8 +150,8 @@ continues to refine the spec.
 | Infrastructure independence | infra Cargo.toml excludes domain/cli | compile-time | Full | 2 trybuild tests | — |
 | Dependency boundary allowlist | arch_allowlist.rs invariant tests | script | Full | tests assert exact dep sets | Adding a dep requires updating the allowlist |
 | Output isolation (domain/infra) | clippy print_stdout/print_stderr = deny | linter | Full | probe verified (println! in domain → clippy error) | cli crate is exempt (presentation layer) |
-| Package location | workspace layout (structural) | design | Structural | — | No file-placement linter |
-| Entry-point minimality | bootstrap-only `main.rs` | design | Structural | — | Code-review / coverage judgment, not compiler-enforced |
+| Package location | workspace layout (structural) | structural | Structural | — | No file-placement linter |
+| Entry-point minimality | bootstrap-only `main.rs` | honor-system | Honor-system | — | Code-review / coverage judgment, not compiler-enforced |
 | Code formatting | cargo fmt + lefthook | pre-commit | Full | — | No violation test |
 | Lint standards | clippy -D warnings | pre-commit | Full | — | No violation test |
 | License + advisory scanning | cargo-deny | pre-commit + CI | Full | — | No violation test |

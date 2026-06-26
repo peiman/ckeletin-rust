@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.9.0"
+spec_version = "0.10.0"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
@@ -59,17 +59,17 @@ violation_tests = ["crates/infrastructure/tests/violations/infra_imports_domain.
 [requirements.CKSPEC-ARCH-006]
 title = "Entry point minimality"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "honor-system"
 evidence = "crates/cli/src/main.rs is the bootstrap entry — arg parsing, config loading, logging init, and dispatch. Feature logic lives in domain; the entry contains no business logic."
 checks = []
 violation_tests = []
-violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target. Domain and infrastructure crates are library-only. Entry-point minimality is a structural/design property — the compiler enforces that only cli has a bin target, but cannot enforce that main.rs stays minimal (that's a code-review / coverage judgment). Hence enforcement_level=design, not compile-time."
+violation_evidence = "Structural: only crates/cli/Cargo.toml has [[bin]] target. Domain and infrastructure crates are library-only. Entry-point minimality is a structural/design property — the compiler enforces that only cli has a bin target, but cannot enforce that main.rs stays minimal (that's a code-review / coverage judgment). Hence enforcement_level=honor-system for the minimality claim — the compiler structurally enforces that only cli has a bin target, but main.rs minimality rests on review."
 
 [requirements.CKSPEC-ARCH-007]
 title = "Package location enforcement"
 status = "met"
-enforcement_level = "design"
-evidence = "All source lives in designated crate directories; no source files at the workspace root. Enforced structurally by the Cargo workspace layout (a stray root .rs file belongs to no crate and is not built) rather than by a dedicated file-placement linter — hence enforcement_level=design, not compile-time."
+enforcement_level = "structural"
+evidence = "All source lives in designated crate directories; no source files at the workspace root. Enforced structurally by the Cargo workspace layout (a stray root .rs file belongs to no crate and is not built) rather than by a dedicated file-placement linter — hence enforcement_level=structural: the layout itself makes a stray root file un-built, so the architecture enforces placement (not a type error, not a linter)."
 checks = ["cargo check --workspace"]
 violation_tests = []
 violation_evidence = "Structural: crates/cli/Cargo.toml has the only [[bin]] target. crates/domain and crates/infrastructure are library-only. No source files at workspace root."
@@ -90,7 +90,7 @@ violation_evidence = "lefthook.yml pre-commit hooks (fmt, clippy, conventional c
 [requirements.CKSPEC-ENF-002]
 title = "Enforcement ladder"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "honor-system"
 evidence = "6 compile-time, 5 pre-commit/CI, 3 honor-system. See enforcement audit table."
 checks = []
 violation_tests = []
@@ -99,7 +99,7 @@ violation_evidence = "Analysis: the ladder (compile-time > linter > script > CI 
 [requirements.CKSPEC-ENF-003]
 title = "Document enforcement gaps"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "honor-system"
 evidence = "CONFORMANCE.md enforcement audit table documents all gaps."
 checks = []
 violation_tests = []
@@ -108,7 +108,7 @@ violation_evidence = "Analysis: CONFORMANCE.md's audit table + the documented EN
 [requirements.CKSPEC-ENF-004]
 title = "Enforcement audit table"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "honor-system"
 evidence = "CONFORMANCE.md contains enforcement audit table."
 checks = []
 violation_tests = []
@@ -168,6 +168,15 @@ checks = ["cargo test -p ckeletin-conform"]
 violation_tests = []
 violation_evidence = "Unit tests report_projection_is_deterministic / sync_check_detects_drift in .ckeletin/conform/src/main.rs prove the report is a stable projection and that drift fails the gate; conformance-report.json is the published artifact."
 
+[requirements.CKSPEC-ENF-011]
+title = "Tooling robustness to nested checkouts"
+status = "met"
+enforcement_level = "structural"
+evidence = "Rust's tree-walking scanners are bounded target-collectors, not recursive walks, so they cannot descend into nested checkouts (git worktrees, vendored copies): the scaffold scanner in .ckeletin/crate/src/scaffold_scan.rs collects a fixed set (named root manifests, the workflows directory, and each layer crate's manifest) with no recursion; the conform tool does no file walk; cargo builds only workspace members. Immune by construction."
+checks = []
+violation_tests = []
+violation_evidence = "Structural: .ckeletin/crate/src/scaffold_scan.rs collect_scan_targets is a bounded collector (no recursion, no WalkDir) — descent into a nested checkout is impossible by construction; .ckeletin/conform/src/main.rs does no tree walk. Covered by scaffold_scan unit tests asserting the collected target set."
+
 # ═══════════════════════════════════════════════════════════════
 # Testing (CKSPEC-TEST-001 through CKSPEC-TEST-004)
 # ═══════════════════════════════════════════════════════════════
@@ -193,7 +202,7 @@ violation_evidence = "`--fail-under-lines 85` in the `just coverage` recipe is a
 [requirements.CKSPEC-TEST-003]
 title = "Dependency injection over mocking"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "script"
 evidence = "Writer injection in Output. No mock frameworks in Cargo.lock."
 checks = ["! grep -qiE '(mockall|mockito|wiremock|double)' Cargo.lock"]
 violation_tests = []
@@ -367,7 +376,7 @@ violation_evidence = "The check requires an ISO-8601 (YYYY-MM-DD) dated version 
 [requirements.CKSPEC-CL-004]
 title = "Semantic Versioning"
 status = "met"
-enforcement_level = "design"
+enforcement_level = "honor-system"
 evidence = "Cargo.toml version field. CHANGELOG states SemVer adherence."
 checks = ["grep -qi 'semantic versioning' CHANGELOG.md"]
 violation_tests = []
