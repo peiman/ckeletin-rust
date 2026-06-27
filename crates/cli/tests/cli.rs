@@ -168,9 +168,14 @@ fn json_mode_bad_config_produces_json_error_on_stdout() {
         .failure();
     let v = parse_json_stdout(&assert);
     assert_eq!(v["status"], "error");
+    // error is a structured object {code, message} (OUT-003 #40)
     assert!(
-        v["error"].is_string(),
-        "error envelope must have an error string"
+        v["error"]["message"].is_string(),
+        "error envelope must carry a message string"
+    );
+    assert!(
+        v["error"].get("code").is_some() && v["error"]["code"].is_null(),
+        "error.code is present and null when there is no code"
     );
 }
 

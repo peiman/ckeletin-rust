@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.10.0"
+spec_version = "0.11.0"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
@@ -243,10 +243,10 @@ violation_evidence = "crates/cli/tests/cli.rs ping_json_mode_* and json_mode_err
 title = "Standardized output envelope"
 status = "met"
 enforcement_level = "script"
-evidence = "Envelope struct emits all four keys (status, command, data, error) as a TOTAL schema (OUT-003 v0.9.0): no skip_serializing_if, so an absent value (data on error, error on success) serializes as JSON null, never omitted. Unit tests assert present-and-null — `data` is present and null on error, `error` is present and null on success."
+evidence = "Envelope struct emits all four keys (status, command, data, error) as a TOTAL schema (OUT-003): no skip_serializing_if, so an absent value (data on error, error on success) serializes as JSON null, never omitted. Error-object shape (OUT-003 v0.11.0, #40): the error field is a structured EnvelopeError { code, message } — code always present (null, as rust has no stable error codes yet), message human-readable; not a bare string. Unit tests assert present-and-null for data/error and the {code, message} error object."
 checks = ["cargo test -p ckeletin --lib output"]
 violation_tests = []
-violation_evidence = ".ckeletin/crate/src/output.rs envelope_* unit tests assert the {status, command, data, error} total envelope shape (every key present; absent value is JSON null, not omitted); a regression fails them in CI (`just check`)."
+violation_evidence = ".ckeletin/crate/src/output.rs envelope_* unit tests assert the {status, command, data, error} total envelope shape (every key present; absent value is JSON null) AND the structured error object {code, message}; crates/cli/tests/cli.rs asserts the live error envelope carries error.message + null error.code; a regression fails them in CI (`just check`)."
 
 [requirements.CKSPEC-OUT-004]
 title = "Shadow logging"

@@ -9,6 +9,17 @@ pub enum Status {
     Error,
 }
 
+/// Structured error detail in the envelope (CKSPEC-OUT-003, error-object shape #40).
+///
+/// The TOTAL schema applies within the error object too: `code` is always
+/// serialized — `null` when this implementation has no stable code for the
+/// error (rust's errors are messages today). `message` is human-readable.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnvelopeError {
+    pub code: Option<String>,
+    pub message: String,
+}
+
 /// Standardized output envelope (CKSPEC-OUT-003).
 ///
 /// Uses `serde_json::Value` for the data field so any Serialize type
@@ -23,7 +34,7 @@ pub struct Envelope {
     pub status: Status,
     pub command: String,
     pub data: Option<serde_json::Value>,
-    pub error: Option<String>,
+    pub error: Option<EnvelopeError>,
 }
 
 impl Envelope {
@@ -43,7 +54,10 @@ impl Envelope {
             status: Status::Error,
             command: command.to_string(),
             data: None,
-            error: Some(message.to_string()),
+            error: Some(EnvelopeError {
+                code: None,
+                message: message.to_string(),
+            }),
         }
     }
 }
@@ -188,7 +202,14 @@ mod tests {
         let json = serde_json::to_value(&envelope).unwrap();
         assert_eq!(json["status"], "error");
         assert_eq!(json["command"], "ping");
-        assert_eq!(json["error"], "connection failed");
+        // error is a structured object {code, message} (OUT-003 #40); code is
+        // always present, null when there is none (total schema within error).
+        assert_eq!(json["error"]["message"], "connection failed");
+        assert!(
+            json["error"].get("code").is_some(),
+            "code key must be present"
+        );
+        assert!(json["error"]["code"].is_null(), "code is null when absent");
         // data key is always present; null on error (total envelope, OUT-003)
         assert!(json.get("data").is_some(), "data key must be present");
         assert!(json["data"].is_null(), "data must be null on error");
@@ -217,7 +238,12 @@ mod tests {
         let envelope = Envelope::error("cmd", "timeout");
         assert_eq!(envelope.status, Status::Error);
         assert!(envelope.data.is_none());
-        assert_eq!(envelope.error.as_ref().unwrap(), "timeout");
+        let err = envelope.error.as_ref().unwrap();
+        assert_eq!(err.message, "timeout");
+        assert!(
+            err.code.is_none(),
+            "rust has no error codes yet — code is null"
+        );
     }
 
     #[test]
@@ -350,7 +376,7 @@ mod tests {
         assert!(stderr.is_empty(), "json error should not write to stderr");
         let envelope: Envelope = serde_json::from_slice(&stdout).unwrap();
         assert_eq!(envelope.status, Status::Error);
-        assert_eq!(envelope.error.unwrap(), "something broke");
+        assert_eq!(envelope.error.unwrap().message, "something broke");
     }
 
     #[test]
