@@ -13,3 +13,7 @@ crates/*/logs/
 # Generated SBOM artifacts (just ckeletin-sbom) — produced on demand / in CI
 *.cdx.json
 sbom.cdx.json
+
+# Local upstream-only working docs (reviews, consumer/dogfooding feedback) —
+# kept on disk as records, never committed. Folder ignored so no filenames are listed.
+local-feedback/
