@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Framework 0.2.29.** `just check` tells you when upstream `.ckeletin/VERSION`
+  is a newer semver. The notice does not fail the build. `just ckeletin-check-update json`
+  still prints `current`, `latest`, and `update_available`, and a local version
+  ahead of upstream is not an update.
+
 ## [0.3.0] - 2026-10-16
 
 Git tag `v0.2.0` (`a7a6c08`) was cut while the package version was still 0.1.0.

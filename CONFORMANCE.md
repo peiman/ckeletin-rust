@@ -1,9 +1,9 @@
-# Ckeletin Spec v0.11.0 — Rust Conformance Report
+# Ckeletin Spec v0.12.0 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.11.0
-**Report date:** 2026-06-27
-**Total:** 42 requirements — 42 met
+**Spec version:** 0.12.0
+**Report date:** 2026-10-16
+**Total:** 45 requirements — 45 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable
 source of truth) and is validated by `just conform` (`.ckeletin/conform/`),
@@ -53,7 +53,7 @@ continues to refine the spec.
 
 ---
 
-## Enforcement (10/10 met)
+## Enforcement (11/11 met)
 
 | ID | Title | Status | Evidence |
 |----|-------|--------|----------|
@@ -111,7 +111,7 @@ continues to refine the spec.
 
 ---
 
-## Agent Readiness (6/6 met)
+## Agent Readiness (7/7 met)
 
 | ID | Title | Status | Evidence |
 |----|-------|--------|----------|
@@ -136,6 +136,16 @@ continues to refine the spec.
 | CKSPEC-CL-005 | Unreleased section | met |
 | CKSPEC-CL-006 | Human-curated, not auto-generated | met |
 | CKSPEC-CL-007 | Version comparison links | met |
+
+---
+
+## Framework Updates (3/3 met)
+
+| ID | Title | Status | Evidence |
+|----|-------|--------|----------|
+| CKSPEC-UPD-001 | Notice when a newer framework version exists | met | `ckeletin-health` runs `check-framework-update.sh`; semver of `.ckeletin/VERSION`; non-fatal; off in CI; `framework_update_notice.rs` |
+| CKSPEC-UPD-002 | One command updates only the framework | met | `just ckeletin-update` replaces `.ckeletin/` only; dry-run and check-compatibility; `update_mechanism.rs` |
+| CKSPEC-UPD-003 | Machine-readable update status | met | `just ckeletin-check-update json` and `CKELETIN_UPDATE_RESULT` |
 
 ---
 

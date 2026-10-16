@@ -56,10 +56,10 @@ crates/
 
 | Recipe | Description |
 |--------|-------------|
-| `just ckeletin-health` | Verify framework version, warn on local `.ckeletin/` modifications, exit non-zero on broken workspace |
+| `just ckeletin-health` | Verify framework version, warn on local `.ckeletin/` modifications, exit non-zero on broken workspace. On success, prints a non-fatal notice when upstream `.ckeletin/VERSION` is a newer semver (skipped in CI, opt-out `CKELETIN_SKIP_UPDATE_CHECK=1`, quiet offline) |
 | `just ckeletin-version` | Print framework version string |
 | `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
-| `just ckeletin-check-update [json]` | Check whether a newer framework version is available. Pass `json` for `{"current","latest","update_available"}`: `just ckeletin-check-update json` |
+| `just ckeletin-check-update [json]` | Same comparison, on demand. Pass `json` for `{"current","latest","update_available"}`. An update is a newer semver, not a string difference: `just ckeletin-check-update json` |
 | `just ckeletin-update [<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`. Example: `just ckeletin-update v0.3.0` |
 | `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Example: `just ckeletin-update-dry-run v0.3.0` |
 | `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Example: `just ckeletin-update-check-compatibility v0.3.0` |
