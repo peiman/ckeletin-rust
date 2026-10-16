@@ -324,7 +324,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "bolero",
  "serde",
@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "infrastructure"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ckeletin",
  "rstest",

@@ -6,9 +6,10 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Weekly heartbeat (Mon 06:00 UTC): catches a new RUSTSEC advisory against a
-    # frozen Cargo.lock even with zero commits — the RUSTSEC-2026-0104 failure
-    # mode. Only the lightweight `advisories` job runs on schedule.
+    # Monday 06:00 UTC. Runs the advisory heartbeat, the unsafe-surface report,
+    # and the Check job (`just check`). The full gate catches a new RUSTSEC
+    # advisory against a frozen Cargo.lock. A scheduled run is not repository
+    # activity: GitHub still disables schedules after 60 days without a commit.
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
@@ -119,7 +120,7 @@ jobs:
 
   check:
     name: Check
-    if: github.event_name != 'schedule'
+    # Push, pull request, manual dispatch, and the Monday schedule.
     runs-on: ubuntu-latest
     steps:
       - name: Prepare job temp folder

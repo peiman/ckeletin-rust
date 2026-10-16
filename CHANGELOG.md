@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
+Git tag `v0.2.0` (`a7a6c08`) was cut while the package version was still 0.1.0.
+It is not a version in this changelog. The entries below are everything since 0.1.0.
+
 ### Fixed
 - **Workhorse consumer feedback (#55–#61), framework 0.2.28.** Health checks
   use their own Cargo target so they do not wait on the parent build lock.
@@ -80,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the off-switches. `logs/` is gitignored.
 
 ### Changed
+- **Monday CI runs `just check`.** The Check job is no longer skipped on the
+  weekly schedule, so a new advisory fails that run against a frozen
+  `Cargo.lock`. GitHub still disables scheduled workflows after 60 days
+  without a commit; this job does not reset that clock.
 - **`just ckeletin-update` now enforces two-tier validation** (#22/#30):
   Tier 1 (`cargo check`) rolls back fully on compile failure. Tier 2
   (`just check`) leaves the tree dirty on failure so you can fix forward —
@@ -183,5 +192,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AGENTS.md universal agent guide
 - CLAUDE.md provider-specific guide
 
-[Unreleased]: https://github.com/peiman/ckeletin-rust/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/peiman/ckeletin-rust/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/peiman/ckeletin-rust/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/peiman/ckeletin-rust/releases/tag/v0.1.0
