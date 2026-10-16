@@ -1,5 +1,25 @@
 # ckeletin Framework Changelog
 
+## [Unreleased]
+
+## [0.2.29] - 2026-10-16
+
+### Added
+- **`just check` notices a newer framework version.** `ckeletin-health` runs
+  `.ckeletin/scripts/check-framework-update.sh`. The notice compares
+  `.ckeletin/VERSION` and prints when upstream is a newer semver. It names
+  `just ckeletin-update`. It does not change the health exit code, does not
+  run when `CI` is set, can be turned off with `CKELETIN_SKIP_UPDATE_CHECK=1`,
+  and stays quiet offline or without the `ckeletin-upstream` remote. A commit
+  that does not change the version is not an update. A local version ahead of
+  upstream is not one either.
+
+### Changed
+- **`just ckeletin-check-update` uses that same script.** `json` still prints
+  `current`, `latest`, and `update_available`. Availability is semver-newer,
+  not a string difference, so a local version ahead of upstream is not reported
+  as an update.
+
 ## [0.2.28] - 2026-10-16
 
 ### Fixed

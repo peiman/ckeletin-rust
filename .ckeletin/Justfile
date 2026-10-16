@@ -28,6 +28,9 @@ ckeletin-health:
     # Propagate compile failure so `just check` catches a BROKEN workspace.
     if cargo check --workspace -q; then
         echo "Workspace: compiles"
+        # Non-fatal. Consumers inherit this recipe; `just ckeletin-update` does
+        # not replace the project Justfile, so the notice has to live here.
+        bash .ckeletin/scripts/check-framework-update.sh || true
     else
         echo "Workspace: BROKEN"
         exit 1
@@ -267,40 +270,16 @@ ckeletin-fuzz:
     done
 
 # Check if a newer framework version is available. Pass `json` for a
-# machine-readable verdict ({"current","latest","update_available"}) — the
-# trigger signal for an autonomous maintenance loop.
+# machine-readable verdict ({"current","latest","update_available"}).
+# Availability is a newer .ckeletin/VERSION, not a string difference.
+# The comparison itself lives in scripts/check-framework-update.sh.
 ckeletin-check-update format="text":
     #!/usr/bin/env bash
-    set -euo pipefail
-    if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
-        if [ "{{format}}" = "json" ]; then
-            printf '{"applicable":false,"reason":"upstream repository"}\n'
-        else
-            echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update check does not apply here."
-        fi
-        exit 0
-    fi
-    if ! git remote | grep -q ckeletin-upstream; then
-        if [ "{{format}}" = "json" ]; then
-            printf '{"error":"no_upstream_remote","hint":"git remote add ckeletin-upstream %s"}\n' "{{ckeletin_upstream_url}}"
-        else
-            echo "No upstream remote. Run: git remote add ckeletin-upstream {{ckeletin_upstream_url}}"
-        fi
-        exit 0
-    fi
-    git fetch ckeletin-upstream -q
-    LOCAL=$(cat .ckeletin/VERSION)
-    REMOTE=$(git show ckeletin-upstream/main:.ckeletin/VERSION 2>/dev/null || echo "unknown")
+    set -uo pipefail
     if [ "{{format}}" = "json" ]; then
-        AVAIL=true; [ "$LOCAL" = "$REMOTE" ] && AVAIL=false
-        printf '{"current":"%s","latest":"%s","update_available":%s}\n' "$LOCAL" "$REMOTE" "$AVAIL"
-        exit 0
-    fi
-    if [ "$LOCAL" = "$REMOTE" ]; then
-        echo "Framework is up to date (v$LOCAL)"
+        bash .ckeletin/scripts/check-framework-update.sh check json
     else
-        echo "Update available: v$LOCAL → v$REMOTE"
-        echo "Run: just ckeletin-update"
+        bash .ckeletin/scripts/check-framework-update.sh check
     fi
 
 # Update framework from upstream

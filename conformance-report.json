@@ -398,14 +398,44 @@
       "status": "met",
       "violation_evidence": "Analysis: test+impl commit grouping is an intent no check can verify after the fact. Mandated in AGENTS.md + CLAUDE.md; git history shows atomic test+implementation commits. Artifact: AGENTS.md + git history.",
       "violation_tests": []
+    },
+    "CKSPEC-UPD-001": {
+      "checks": [
+        "cargo test -p ckeletin --test framework_update_notice"
+      ],
+      "enforcement_level": "test",
+      "evidence": "just check runs ckeletin-health, which calls .ckeletin/scripts/check-framework-update.sh after the workspace compiles. The script compares .ckeletin/VERSION with ckeletin-upstream/main and prints when upstream is a newer semver. It names `just ckeletin-update`. It does not change the health exit code, skips when CI is set, honours CKELETIN_SKIP_UPDATE_CHECK=1, stays quiet when the fetch fails or the remote is missing, and does not run when Cargo.toml still names the upstream slug. A commit that does not change VERSION does not notify. A local version ahead of upstream does not notify.",
+      "status": "met",
+      "violation_evidence": ".ckeletin/crate/tests/framework_update_notice.rs is the violation suite: notice_ignores_a_commit_that_does_not_change_version and notice_silent_when_local_is_ahead must not print Update available. health_recipe_runs_the_notice fails if ckeletin-health stops calling the script.",
+      "violation_tests": []
+    },
+    "CKSPEC-UPD-002": {
+      "checks": [
+        "cargo test -p ckeletin --test update_mechanism"
+      ],
+      "enforcement_level": "test",
+      "evidence": "just ckeletin-update restores only .ckeletin/ from an explicit ref or from ckeletin-upstream/main (the upstream default branch). just ckeletin-update-dry-run prints the diff and changes nothing. just ckeletin-update-check-compatibility applies the candidate and restores it with a trap. The command prints the framework version before and after and sets CKELETIN_UPDATE_RESULT from/to. .ckeletin/VERSION is that version. A git tag passed as the ref is only a pin.",
+      "status": "met",
+      "violation_evidence": ".ckeletin/crate/tests/update_mechanism.rs exercises wholesale replacement of .ckeletin/, tag pins, dry-run safety, and the compatibility check restoring the tree. .ckeletin/Justfile recipes ckeletin-update, ckeletin-update-dry-run, and ckeletin-update-check-compatibility are the command.",
+      "violation_tests": []
+    },
+    "CKSPEC-UPD-003": {
+      "checks": [
+        "cargo test -p ckeletin --test framework_update_notice json_check"
+      ],
+      "enforcement_level": "test",
+      "evidence": "just ckeletin-check-update json prints current, latest, and update_available. just ckeletin-update prints CKELETIN_UPDATE_RESULT with status, from, to, and committed.",
+      "status": "met",
+      "violation_evidence": ".ckeletin/crate/tests/framework_update_notice.rs json_check_reports_current_latest_and_availability parses those three fields. .ckeletin/Justfile emits CKELETIN_UPDATE_RESULT, and .ckeletin/crate/tests/update_mechanism.rs asserts that object on the update command.",
+      "violation_tests": []
     }
   },
-  "spec_version": "0.11.0",
+  "spec_version": "0.12.0",
   "summary": {
     "deferred": 0,
-    "met": 42,
+    "met": 45,
     "partial": 0,
     "passed": true,
-    "total": 42
+    "total": 45
   }
 }
