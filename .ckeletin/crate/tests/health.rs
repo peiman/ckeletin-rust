@@ -31,6 +31,26 @@ fn have(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Point the nested `cargo check` at its own target and build directories.
+///
+/// `ckeletin-health` runs `cargo check` in this same workspace. Cargo 1.96
+/// serializes that check on `target/debug/.cargo-lock`. A parent `cargo test`
+/// that still holds the lock waits until the job timeout. The two directories
+/// have independent locks, so overriding only `CARGO_TARGET_DIR` is not enough
+/// when the caller also set `CARGO_BUILD_BUILD_DIR`.
+fn isolate_cargo_build(command: &mut Command, root: &Path) {
+    let target_dir = root.join("target/health-check");
+    let build_dir = target_dir.join("build");
+    std::fs::create_dir_all(&build_dir).unwrap_or_else(|error| {
+        panic!(
+            "create health-check build dir {}: {error}",
+            build_dir.display()
+        );
+    });
+    command.env("CARGO_TARGET_DIR", &target_dir);
+    command.env("CARGO_BUILD_BUILD_DIR", &build_dir);
+}
+
 /// Git env for hermetic commits (CI runners have no identity).
 fn git_env() -> [(&'static str, &'static str); 4] {
     [
@@ -54,9 +74,11 @@ fn health_exits_zero_on_clean_tree() {
         return;
     }
 
-    let out = Command::new("just")
-        .arg("ckeletin-health")
-        .current_dir(workspace_root())
+    let root = workspace_root();
+    let mut command = Command::new("just");
+    command.arg("ckeletin-health").current_dir(&root);
+    isolate_cargo_build(&mut command, &root);
+    let out = command
         .output()
         .expect("failed to run `just ckeletin-health`");
 
@@ -136,9 +158,10 @@ fn health_exits_nonzero_on_broken_workspace() {
     let original = std::fs::read_to_string(&lib_rs).unwrap();
     std::fs::write(&lib_rs, format!("{original}\nthis is not valid rust @@@\n")).unwrap();
 
-    let out = Command::new("just")
-        .arg("ckeletin-health")
-        .current_dir(&project_dir)
+    let mut command = Command::new("just");
+    command.arg("ckeletin-health").current_dir(&project_dir);
+    isolate_cargo_build(&mut command, &project_dir);
+    let out = command
         .output()
         .expect("failed to run `just ckeletin-health`");
 

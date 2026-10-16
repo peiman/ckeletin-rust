@@ -128,7 +128,7 @@ feedback, 2026-06-10 — agent-chat and ioguard both ship this shape.)
 | Scenario | Command |
 |----------|---------|
 | Run all checks | `just check` |
-| Run tests only | `just test` |
+| Run tests only | `just test` (`cargo test --workspace`; cargo-nextest is not the gate) |
 | Format code | `just fmt` |
 | Check formatting | `just ckeletin-fmt-check` |
 | Run clippy | `just ckeletin-clippy` |
@@ -141,7 +141,9 @@ feedback, 2026-06-10 — agent-chat and ioguard both ship this shape.)
 | Run single crate tests | `cargo test -p domain` |
 | Run specific test | `cargo test -p ckeletin --lib output::tests::envelope_success` |
 
-**`just check` is the single gateway.** It runs fmt, clippy, test, deny, health — the same checks in CI and locally (SSOT). Run it before every commit.
+**`just check` is the single gateway.** It runs fmt, clippy, test, deny, health, and the health-lock regression — the same checks in CI and locally (SSOT). Run it before every commit.
+
+**Per commit.** `git rebase --exec 'just check'` runs the full gate on every commit you rewrite. CI does not repeat that cost: a pull request runs fmt, clippy, `cargo check --workspace --all-targets`, and `cargo deny` on each commit, and the full `just check` on the tip.
 
 **`catalog` subcommand (CKSPEC-AGENT-006):** `cargo run -p cli -- catalog` emits a machine-readable JSON catalog of all commands and flags, derived directly from the live clap command tree. Because the catalog and the parser share one tree, the catalog cannot drift from the actual command set.
 
@@ -248,6 +250,7 @@ The audit log (CKSPEC-OUT-004) writes to `~/.config/<app>/logs/` by default, usi
 
 ## Testing
 
+- **Test launcher.** `.cargo/config.toml` runs `.ckeletin/scripts/test-runner.py` for test binaries (`deps/` or an explicit `--test`). Each test gets a private home, temp directory, and git identity `ckeletin-test`. The directory is removed when the test exits. `cargo run` is not wrapped.
 - **Unit tests:** `#[cfg(test)] mod tests` in each source file
 - **Violation tests:** `trybuild` compile-fail tests in `crates/*/tests/`
 - **Integration tests:** `assert_cmd` in `crates/cli/tests/cli.rs`
