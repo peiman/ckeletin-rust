@@ -60,15 +60,15 @@ crates/
 | `just ckeletin-version` | Print framework version string |
 | `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
 | `just ckeletin-check-update [json]` | Check whether a newer framework version is available. Pass `json` for `{"current","latest","update_available"}`: `just ckeletin-check-update json` |
-| `just ckeletin-update [<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`. Example: `just ckeletin-update v0.2.18` |
-| `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Example: `just ckeletin-update-dry-run v0.2.18` |
-| `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Example: `just ckeletin-update-check-compatibility v0.2.18` |
+| `just ckeletin-update [<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`. Example: `just ckeletin-update v0.3.0` |
+| `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Example: `just ckeletin-update-dry-run v0.3.0` |
+| `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Example: `just ckeletin-update-check-compatibility v0.3.0` |
 | `just conform [ARGS]` | Run conformance generator against the vendored spec snapshot (hermetic, no network). Upstream-only — no-ops in consumer repos |
 | `just conform-refresh` | Fetch the latest spec from upstream and update `conformance/requirements.json`. Upstream-only |
 | `just conform-report` | Regenerate `conformance-report.json` from the mapping (CKSPEC-ENF-010). Upstream-only |
 | `just init <slug> [true]` | Initialize the scaffold for a new project. The `name` argument is required (positional); pass `true` as the second positional argument to bypass the already-initialized guard: `just init my-app` or `just init my-app true` |
 
-**Tags work for the version argument:** `just ckeletin-update v0.2.18` resolves the tag via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`.
+**Tags work for the version argument:** `just ckeletin-update v0.3.0` resolves that app release via `git fetch ckeletin-upstream <tag>` and `FETCH_HEAD`. The tag must already exist. Omit the argument to follow the upstream default branch. A framework crate version (`.ckeletin/VERSION`) is not a git tag.
 
 **Scaffold-leftover guard:** consumer repos fail `just check` if functional files (`.github/workflows/*.yml`, root `Justfile`, `lefthook.yml`, `Cargo.toml`s, `deny.toml`) still contain the literal `ckeletin-rust` on non-comment, non-gating lines. This guard fires after `just ckeletin-update` so you find leftovers immediately rather than at release time. Exclusions: comment lines, `github.repository ==` gating lines, everything under `.ckeletin/`. On update, the guard may flag your pre-existing `release.yml` — the exact defect that caused ioguard v0.1.0 to publish zero artifacts. See ioguard PR #4 as the worked fix; the current upstream `release.yml` uses `cargo metadata --no-deps` to derive the binary name structurally and is the reference implementation.
 
@@ -348,8 +348,10 @@ The Rust **toolchain is pinned** (`rust-toolchain.toml` + CI) for reproducible
 builds and stable trybuild snapshots. The RustSec **advisory database that
 `cargo deny` consults is deliberately NOT pinned** — it floats so new CVEs
 against transitive deps surface immediately. So CI can go red with zero commits
-here when a fresh advisory lands (a weekly scheduled job catches this even on an
-idle repo). That is the security system working. Remediation order:
+here when a fresh advisory lands. The Monday schedule runs `just check`, which
+includes `cargo deny`, so that failure shows up against a frozen lockfile.
+A scheduled run does not count as repository activity: GitHub still disables
+scheduled workflows after 60 days without a commit. Remediation order:
 
 1. Read the `RUSTSEC-…` id in the cargo-deny output.
 2. `cargo update` (or `cargo update -p <crate>`), re-run `just ckeletin-deny`. A
