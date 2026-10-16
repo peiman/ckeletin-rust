@@ -22,7 +22,7 @@ ckeletin-health:
     if [ -z "$(git status --porcelain .ckeletin/)" ]; then
         echo "Status: clean"
     else
-        echo "WARNING: .ckeletin/ has local changes (incl. added files) — next update will shadow/ignore them"
+        echo "WARNING: .ckeletin/ has local changes (incl. added files) — ckeletin-update will stop until they are committed and, if the committed tree differs, passed discard_local=true"
         git status --porcelain .ckeletin/
     fi
     # Propagate compile failure so `just check` catches a BROKEN workspace.
@@ -282,17 +282,39 @@ ckeletin-check-update format="text":
         bash .ckeletin/scripts/check-framework-update.sh check
     fi
 
-# Update framework from upstream
-ckeletin-update version="main":
+# Update framework from upstream.
+# discard_local=true discards a committed local difference. It does not
+# discard uncommitted changes.
+ckeletin-update version="main" discard_local="false":
     #!/usr/bin/env bash
     set -euo pipefail
-    if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
-        echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update does not apply here."
+    # just passes recipe arguments by position. `just ckeletin-update v1.0.0 true`
+    # sets both. `just ckeletin-update discard_local=true` is the one-argument
+    # form: the whole token lands in `version`, and it means discard and follow main.
+    REQ_VERSION="{{version}}"
+    REQ_DISCARD="{{discard_local}}"
+    if [ "$REQ_VERSION" = "discard_local=true" ]; then
+        REQ_VERSION="main"
+        REQ_DISCARD="true"
+    elif [ "$REQ_DISCARD" = "discard_local=true" ]; then
+        REQ_DISCARD="true"
+    fi
+    if [ "$REQ_DISCARD" != "true" ]; then
+        REQ_DISCARD="false"
+    fi
+    MARK=$(mktemp)
+    cleanup_mark() { rm -f "$MARK"; }
+    trap cleanup_mark EXIT
+    bash .ckeletin/scripts/framework-local-diff.sh update "$REQ_DISCARD" "{{ckeletin_upstream_url}}" "$MARK"
+    state=$(cat "$MARK")
+    cleanup_mark
+    trap - EXIT
+    if [ "$state" = "exempt" ]; then
         exit 0
     fi
-    if [ -n "$(git status --porcelain .ckeletin/)" ]; then
-        echo "Error: .ckeletin/ has uncommitted changes (incl. added files). Commit or revert first."
-        exit 1
+    DISCARDED=false
+    if [ "$state" = "true" ]; then
+        DISCARDED=true
     fi
     OLD_VERSION=$(cat .ckeletin/VERSION)
     if ! git remote | grep -q ckeletin-upstream; then
@@ -301,10 +323,10 @@ ckeletin-update version="main":
     git fetch ckeletin-upstream
     # Resolve the ref: branch refs live under refs/remotes/ckeletin-upstream/;
     # tags must be fetched explicitly and accessed via refs/tags/ or FETCH_HEAD.
-    if [ "{{version}}" = "main" ]; then
+    if [ "$REQ_VERSION" = "main" ]; then
         CHECKOUT_REF="ckeletin-upstream/main"
     else
-        git fetch ckeletin-upstream "{{version}}"
+        git fetch ckeletin-upstream "$REQ_VERSION"
         CHECKOUT_REF="FETCH_HEAD"
     fi
     # Wholesale replacement: `git restore --source --staged --worktree` both adds
@@ -321,7 +343,8 @@ ckeletin-update version="main":
         # Restore HEAD state wholesale: removes added files, restores deleted files.
         git restore --source=HEAD --staged --worktree -- .ckeletin/
         cargo generate-lockfile
-        printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true}\n' "$OLD_VERSION" "$NEW_VERSION"
+        # Rollback restored the previous tree, so a discard did not stick.
+        printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true,"reason":null,"discarded":false}\n' "$OLD_VERSION" "$NEW_VERSION"
         exit 1
     fi
     # Tier 2: must pass the SAME gate the project runs — `just check` (clippy
@@ -337,7 +360,7 @@ ckeletin-update version="main":
         echo "above (real fix, or a reasoned #[allow]), then commit:"
         echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
-        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false}\n' "$OLD_VERSION" "$NEW_VERSION"
+        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$DISCARDED"
         exit 1
     fi
     echo ""
@@ -347,14 +370,20 @@ ckeletin-update version="main":
     git add .ckeletin/ Cargo.lock
     git commit -m "chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION"
     # Final machine-readable verdict for an autonomous driver (workhorse).
-    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":true,"rolled_back":false}\n' "$OLD_VERSION" "$NEW_VERSION"
+    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":true,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$DISCARDED"
 
-# Preview update without applying
+# Preview update without applying. A local difference is printed. Nothing is modified.
 ckeletin-update-dry-run version="main":
     #!/usr/bin/env bash
     set -euo pipefail
-    if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
-        echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update does not apply here."
+    MARK=$(mktemp)
+    cleanup_mark() { rm -f "$MARK"; }
+    trap cleanup_mark EXIT
+    bash .ckeletin/scripts/framework-local-diff.sh dry-run false "{{ckeletin_upstream_url}}" "$MARK"
+    state=$(cat "$MARK")
+    cleanup_mark
+    trap - EXIT
+    if [ "$state" = "exempt" ]; then
         exit 0
     fi
     if ! git remote | grep -q ckeletin-upstream; then
@@ -374,7 +403,7 @@ ckeletin-update-dry-run version="main":
     echo "Current: v$LOCAL → Available: v$REMOTE"
     echo ""
     echo "Files that would change:"
-    git diff "HEAD..$CHECKOUT_REF" --stat -- .ckeletin/
+    git --no-pager diff --stat "HEAD..$CHECKOUT_REF" -- .ckeletin/ || true
 
 # Applies the upstream .ckeletin/ to the working tree, runs the full `just check`
 # gate, then restores your committed framework (via a trap, so restoration
@@ -385,13 +414,15 @@ ckeletin-update-dry-run version="main":
 ckeletin-update-check-compatibility version="main":
     #!/usr/bin/env bash
     set -euo pipefail
-    if grep -q "{{ckeletin_upstream_slug}}" Cargo.toml; then
-        echo "This is the {{ckeletin_upstream_slug}} upstream repository itself — framework update does not apply here."
+    MARK=$(mktemp)
+    cleanup_mark() { rm -f "$MARK"; }
+    trap cleanup_mark EXIT
+    bash .ckeletin/scripts/framework-local-diff.sh compatibility false "{{ckeletin_upstream_url}}" "$MARK"
+    state=$(cat "$MARK")
+    cleanup_mark
+    trap - EXIT
+    if [ "$state" = "exempt" ]; then
         exit 0
-    fi
-    if [ -n "$(git status --porcelain .ckeletin/)" ]; then
-        echo "Error: .ckeletin/ has uncommitted changes (incl. added files). Commit or revert first."
-        exit 1
     fi
     if ! git remote | grep -q ckeletin-upstream; then
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}

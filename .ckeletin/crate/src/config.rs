@@ -6,8 +6,13 @@ use serde::{Deserialize, Serialize};
 
 /// Application configuration.
 ///
-/// Loaded with layered precedence: defaults < config file < env vars.
+/// Loaded with layered precedence: framework defaults < `[defaults]` in the
+/// repo-root `ckeletin-project.toml` < config file < env vars.
 /// CLI flag overrides are applied by the cli crate after loading.
+///
+/// `[defaults]` is embedded from that file at compile time, so an installed
+/// binary keeps the project default. The file lives outside `.ckeletin/`, so a
+/// framework update does not delete it. Absent `[defaults]` changes nothing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     /// Console log level (trace, debug, info, warn, error).
@@ -70,20 +75,74 @@ impl Default for Config {
     }
 }
 
+/// Repo-root project file, relative to the framework crate directory.
+/// `include_str!` below is relative to this source file (`src/`), one level deeper.
+#[cfg(test)]
+const PROJECT_DEFAULTS_FROM_CRATE: &str = "../../ckeletin-project.toml";
+
+/// Compile-time copy of the repo-root `ckeletin-project.toml`.
+const EMBEDDED_PROJECT_TOML: &str = include_str!("../../../ckeletin-project.toml");
+
+/// Keys a project may set under `[defaults]`. They are `Config` field names.
+const PROJECT_DEFAULT_KEYS: &[&str] = &[
+    "log_level",
+    "log_file_enabled",
+    "log_file_path",
+    "log_file_level",
+    "log_location",
+    "json",
+];
+
+/// The project file has other tables (`layers`, `allowlists`, `violation_tests`).
+/// This loader reads only `[defaults]` and ignores the rest.
+#[derive(Debug, Default, Deserialize)]
+struct ProjectFile {
+    #[serde(default)]
+    defaults: Option<figment::value::Dict>,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct ProjectDefaults {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_file_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_file_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_file_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    json: Option<bool>,
+}
+
 impl Config {
     /// Load configuration with layered precedence:
-    /// defaults → config file (if exists) → environment variables.
+    /// framework defaults → `[defaults]` → config file (if exists) → environment variables.
     ///
     /// `env_prefix` controls which environment variables are read.
     /// Projects pass their own name: `"WORKHORSE_"`, `"MYAPP_"`.
     /// The scaffold default is `"CKELETIN_"`.
     ///
     /// Missing config file is not an error — defaults apply.
+    /// An unknown key in `[defaults]` is an error.
     pub fn load(
         config_path: Option<&str>,
         env_prefix: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_with_project_toml(config_path, env_prefix, EMBEDDED_PROJECT_TOML)
+    }
+
+    fn load_with_project_toml(
+        config_path: Option<&str>,
+        env_prefix: &str,
+        project_toml: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
+        if let Some(defaults) = project_defaults(project_toml)? {
+            figment = figment.merge(Serialized::defaults(defaults));
+        }
 
         if let Some(path) = config_path {
             let p = std::path::Path::new(path);
@@ -106,6 +165,66 @@ impl Config {
             .extract()
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
+}
+
+fn project_defaults(
+    project_toml: &str,
+) -> Result<Option<ProjectDefaults>, Box<dyn std::error::Error>> {
+    let file: ProjectFile = Figment::new()
+        .merge(Toml::string(project_toml))
+        .extract()
+        .map_err(|e| format!("ckeletin-project.toml: {e}"))?;
+    let Some(dict) = file.defaults else {
+        return Ok(None);
+    };
+    for key in dict.keys() {
+        if !PROJECT_DEFAULT_KEYS.contains(&key.as_str()) {
+            return Err(format!(
+                "unknown project default `{key}` in ckeletin-project.toml [defaults]"
+            )
+            .into());
+        }
+    }
+    let mut defaults = ProjectDefaults::default();
+    for (key, value) in dict {
+        match key.as_str() {
+            "log_level" => defaults.log_level = Some(value_as_string(&value, &key)?),
+            "log_file_enabled" => {
+                defaults.log_file_enabled = Some(value_as_bool(&value, &key)?);
+            }
+            "log_file_path" => defaults.log_file_path = Some(value_as_string(&value, &key)?),
+            "log_file_level" => defaults.log_file_level = Some(value_as_string(&value, &key)?),
+            "log_location" => defaults.log_location = Some(value_as_string(&value, &key)?),
+            "json" => defaults.json = Some(value_as_bool(&value, &key)?),
+            _ => {
+                return Err(format!(
+                    "unknown project default `{key}` in ckeletin-project.toml [defaults]"
+                )
+                .into());
+            }
+        }
+    }
+    Ok(Some(defaults))
+}
+
+fn value_as_string(
+    value: &figment::value::Value,
+    key: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    value.clone().into_string().ok_or_else(|| {
+        format!("project default `{key}` in ckeletin-project.toml [defaults] must be a string")
+            .into()
+    })
+}
+
+fn value_as_bool(
+    value: &figment::value::Value,
+    key: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    value.to_bool().ok_or_else(|| {
+        format!("project default `{key}` in ckeletin-project.toml [defaults] must be a boolean")
+            .into()
+    })
 }
 
 #[cfg(test)]
@@ -269,6 +388,104 @@ mod tests {
             let config_path = jail.directory().join("config.toml");
             let config = load_in_jail(Some(config_path.to_str().unwrap()), "CKPREC_")?;
             assert_eq!(config.log_level, "error", "env should override TOML");
+            Ok(())
+        });
+    }
+
+    fn load_with_defaults(
+        project_toml: &str,
+        config_path: Option<&str>,
+        prefix: &str,
+    ) -> figment::Result<Config> {
+        Config::load_with_project_toml(config_path, prefix, project_toml)
+            .map_err(|e| e.to_string().into())
+    }
+
+    #[test]
+    fn project_defaults_file_is_outside_framework_tree() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(super::PROJECT_DEFAULTS_FROM_CRATE);
+        let canon = path
+            .canonicalize()
+            .unwrap_or_else(|e| panic!("repo-root ckeletin-project.toml ({path:?}): {e}"));
+        assert!(
+            !canon.components().any(|c| c.as_os_str() == ".ckeletin"),
+            "project defaults file must not live under .ckeletin: {}",
+            canon.display()
+        );
+        let disk = std::fs::read_to_string(&canon).unwrap();
+        assert_eq!(
+            disk,
+            super::EMBEDDED_PROJECT_TOML,
+            "Config embeds the repo-root ckeletin-project.toml"
+        );
+    }
+
+    #[test]
+    fn project_default_log_level_applies_when_nothing_else_sets_it() {
+        Jail::expect_with(|_jail| {
+            let config =
+                load_with_defaults("[defaults]\nlog_level = \"warn\"\n", None, TEST_PREFIX)?;
+            assert_eq!(config.log_level, "warn");
+            assert!(config.log_file_enabled);
+            assert!(!config.json);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn absent_defaults_table_keeps_framework_default() {
+        Jail::expect_with(|_jail| {
+            let config = load_with_defaults(
+                "[layers]\ndomain = [\"crates/domain\"]\n",
+                None,
+                TEST_PREFIX,
+            )?;
+            assert_eq!(config.log_level, "info");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn config_file_overrides_project_default() {
+        Jail::expect_with(|jail| {
+            jail.create_file("app.toml", "log_level = \"info\"\n")?;
+            let path = jail.directory().join("app.toml");
+            let config = load_with_defaults(
+                "[defaults]\nlog_level = \"warn\"\n",
+                Some(path.to_str().unwrap()),
+                TEST_PREFIX,
+            )?;
+            assert_eq!(config.log_level, "info");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn env_overrides_project_default() {
+        Jail::expect_with(|jail| {
+            jail.set_env("CKLAYER_LOG_LEVEL", "error");
+            let config =
+                load_with_defaults("[defaults]\nlog_level = \"warn\"\n", None, "CKLAYER_")?;
+            assert_eq!(config.log_level, "error");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn unknown_project_default_key_fails_load() {
+        Jail::expect_with(|_jail| {
+            let err = Config::load_with_project_toml(
+                None,
+                TEST_PREFIX,
+                "[defaults]\nnot_a_real_option = \"warn\"\n",
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(
+                err.contains("not_a_real_option"),
+                "error should name the unknown key: {err}"
+            );
             Ok(())
         });
     }

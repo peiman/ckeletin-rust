@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Framework 0.2.30.** `just ckeletin-update` stops when `.ckeletin/` has
+  uncommitted changes or a committed local difference. `discard_local=true`
+  discards only a committed difference. `[defaults]` in `ckeletin-project.toml`
+  overrides a framework config default and survives an update.
 - **Framework 0.2.29.** `just check` tells you when upstream `.ckeletin/VERSION`
   is a newer semver. The notice does not fail the build. `just ckeletin-check-update json`
   still prints `current`, `latest`, and `update_available`, and a local version

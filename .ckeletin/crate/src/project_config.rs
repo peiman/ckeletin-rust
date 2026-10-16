@@ -7,6 +7,9 @@
 //! - Per-layer dependency allowlists (`[allowlists]`)
 //! - Where violation test copies live (`[violation_tests]`)
 //!
+//! `[defaults]` in the same file is a framework-option default read by
+//! `config::Config`. This loader ignores that table.
+//!
 //! This file survives `just ckeletin-update` (it lives outside `.ckeletin/`).
 //! It is the SSOT for everything a consumer needs to tailor — framework-owned
 //! test files (`.ckeletin/crate/tests/`) read from it and must never be edited.
@@ -395,6 +398,27 @@ enabled = false
         let outcome = load(ws.path()).unwrap();
         let config = outcome.config();
         assert!(!config.violation_tests.enabled);
+    }
+
+    #[test]
+    fn load_ignores_framework_option_defaults_table() {
+        let ws = make_workspace(&[(
+            "ckeletin-project.toml",
+            r#"
+[defaults]
+log_level = "warn"
+
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+"#,
+        )]);
+        let outcome = load(ws.path()).unwrap();
+        let config = outcome.config();
+        assert_eq!(config.layers.domain, vec!["chat-core"]);
+        assert_eq!(config.layers.infrastructure, vec!["chat-infra"]);
+        assert_eq!(config.layers.cli, vec!["chat-cli"]);
     }
 
     // ── scaffold_defaults tests ───────────────────────────────────────────────

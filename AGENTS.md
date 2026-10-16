@@ -10,7 +10,7 @@ Key characteristics:
 - **Three-stream output:** stdout (data), stderr (status), log file (audit)
 - **JSON mode:** `--output json` flag for machine-readable output on every command
 - **Shadow logging:** every output logged to an audit file (on by default, at `~/.config/<app>/logs/`; `--no-audit` or the `log_file_enabled` config to change)
-- **Layered configuration:** defaults → TOML file → environment variables → CLI flags
+- **Layered configuration:** framework defaults → `[defaults]` in `ckeletin-project.toml` → TOML file → environment variables → CLI flags
 - **TDD:** Tests first, always. 85% minimum coverage
 - **Dependency injection over mocking** — writer injection pattern, no mock frameworks
 
@@ -50,7 +50,7 @@ crates/
 
 ## .ckeletin/ — Vendored Framework
 
-`.ckeletin/` is the **vendored ckeletin framework**. It is framework-owned and **replaced wholesale** by `just ckeletin-update`. Do not hand-edit files inside `.ckeletin/` — changes are clobbered on update without warning. The `ckeletin-health` recipe warns when `.ckeletin/` has local modifications.
+`.ckeletin/` is the **vendored ckeletin framework**. It is framework-owned and **replaced wholesale** by `just ckeletin-update`. Do not hand-edit files inside `.ckeletin/`. Uncommitted changes always stop the update. A committed local difference stops it too, unless you pass `discard_local=true` (that does not discard uncommitted changes). The `ckeletin-health` recipe warns when `.ckeletin/` has local modifications.
 
 **Framework surface (agent-drivable):**
 
@@ -60,9 +60,9 @@ crates/
 | `just ckeletin-version` | Print framework version string |
 | `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
 | `just ckeletin-check-update [json]` | Same comparison, on demand. Pass `json` for `{"current","latest","update_available"}`. An update is a newer semver, not a string difference: `just ckeletin-check-update json` |
-| `just ckeletin-update [<branch\|tag>]` | Wholesale-replace `.ckeletin/` from upstream. Runs two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Emits `CKELETIN_UPDATE_RESULT={"status","from","to","committed","rolled_back"}`. Example: `just ckeletin-update v0.3.0` |
-| `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Example: `just ckeletin-update-dry-run v0.3.0` |
-| `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Example: `just ckeletin-update-check-compatibility v0.3.0` |
+| `just ckeletin-update [<branch\|tag>] [true]` | Wholesale-replace `.ckeletin/` from upstream. Stops when `.ckeletin/` has uncommitted changes or a committed local difference (`CKELETIN_UPDATE_RESULT` `status` `stopped`, `reason` `uncommitted`, `local_difference`, or `unknown_version`). The second argument `true` (`discard_local`) discards only a committed difference and sets `discarded` true. `just ckeletin-update discard_local=true` is the same request and follows upstream `main`. Then two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). Result fields: `status`, `from`, `to`, `committed`, `rolled_back`, `reason`, `discarded`. Example: `just ckeletin-update v0.3.0` |
+| `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Prints a local framework difference when one exists and still changes nothing. Example: `just ckeletin-update-dry-run v0.3.0` |
+| `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework (interrupt-safe trap). No changes kept. Exits 1 without modifying `.ckeletin/` when the tree is uncommitted or locally different. Example: `just ckeletin-update-check-compatibility v0.3.0` |
 | `just conform [ARGS]` | Run conformance generator against the vendored spec snapshot (hermetic, no network). Upstream-only — no-ops in consumer repos |
 | `just conform-refresh` | Fetch the latest spec from upstream and update `conformance/requirements.json`. Upstream-only |
 | `just conform-report` | Regenerate `conformance-report.json` from the mapping (CKSPEC-ENF-010). Upstream-only |
@@ -77,6 +77,8 @@ crates/
 `ckeletin-project.toml` at the workspace root is the **project-owned** file where you declare your layer layout and allowlists.  It lives outside `.ckeletin/` and is **never touched by `just ckeletin-update`**.  This is the SSOT for everything you need to tailor — never edit `.ckeletin/crate/tests/arch_allowlist.rs` or `.ckeletin/crate/tests/violation_drift_guard.rs` (they are framework-owned and clobbered on every update).
 
 ### Sections
+
+**`[defaults]`** — optional framework option defaults (`log_level`, `log_file_enabled`, `log_file_path`, `log_file_level`, `log_location`, `json`). Used only when no config file, environment variable, or CLI flag sets the option. An unknown key fails config load. This loader does not read the table; `Config` does. Absent `[defaults]` keeps the framework default.
 
 **`[layers]`** — paths of your layer crates relative to the workspace root.  List form is supported for projects with multiple domain crates:
 

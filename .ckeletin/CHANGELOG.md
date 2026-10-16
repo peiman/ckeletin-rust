@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.2.30] - 2026-10-17
+
+### Added
+- **Project defaults.** `[defaults]` in the repo-root `ckeletin-project.toml`
+  overrides a framework config default when no config file, environment
+  variable, or CLI flag sets the option. The file is outside `.ckeletin/`, so
+  `just ckeletin-update` leaves it in place. The framework crate embeds it at
+  compile time. An unknown key fails config load. Other tables in that file
+  are not config defaults.
+
+### Changed
+- **`just ckeletin-update` stops on a local framework difference.** Uncommitted
+  changes in `.ckeletin/` always stop the command. A committed difference from
+  the upstream tree at the same `.ckeletin/VERSION` stops it too, unless
+  `discard_local=true`. That flag does not discard uncommitted changes, and
+  the command says when it discards a committed difference. The dry run prints
+  a local difference and changes nothing. The compatibility check exits 1
+  without modifying the tree when a local difference exists.
+  `CKELETIN_UPDATE_RESULT` includes `reason` and `discarded`.
+
 ## [0.2.29] - 2026-10-16
 
 ### Added

@@ -5,7 +5,7 @@ Rust CLI scaffold implementing the [ckeletin specification](https://github.com/p
 ## Architecture
 
 ```
-.ckeletin/          vendored framework — replaced wholesale by `just ckeletin-update`
+.ckeletin/          vendored framework — `just ckeletin-update` replaces it and stops if you changed it
 ├── crate/src/      config, logging, output, catalog, build_info, process
 └── conform/        conformance generator binary
 
