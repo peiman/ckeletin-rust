@@ -12,6 +12,7 @@ Run `just check` to verify the project is green. If it's not, fix it before doin
 1. **TDD always.** Write failing test → verify it fails → implement → verify it passes → commit. No exceptions.
 2. **Atomic commits.** Test + implementation in one commit. Every commit must pass `just check`.
 3. **Conventional commits.** `feat:`, `fix:`, `test:`, `docs:`, etc. Lefthook enforces this.
+4. **Rewriting history.** `git rebase --exec 'just check'` before you push. CI repeats a cheaper slice (fmt, clippy, `cargo check`, `cargo deny`) on every pull-request commit.
 
 ## Architecture Rules (Compiler-Enforced)
 

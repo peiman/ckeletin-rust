@@ -33,6 +33,13 @@ ckeletin-health:
         exit 1
     fi
 
+# Prove ckeletin-health does not wait on the parent Cargo build lock.
+# A green `cargo test` is not this proof: the parent often releases
+# target/debug/.cargo-lock before the test body runs. The nested check is a
+# real workspace build, so the timeout has to outlast a cold target/health-check.
+ckeletin-health-lock:
+    .ckeletin/scripts/test_health_build_lock.py
+
 # Show the framework version (parity with ckeletin-go's `task version`)
 ckeletin-version:
     @echo "ckeletin framework v{{ckeletin_version}}"
@@ -80,7 +87,7 @@ ckeletin-doctor format="text":
     report() { if command -v "$1" >/dev/null 2>&1; then echo "  $2: installed"; else echo "  $2: NOT FOUND ($3)"; fi; }
     report cargo-deny "cargo-deny (just check)" "required: cargo install cargo-deny --locked"
     report cargo-llvm-cov "cargo-llvm-cov (just coverage)" "required: cargo install cargo-llvm-cov --locked"
-    report cargo-nextest "cargo-nextest (just test; falls back to cargo test)" "optional: cargo install cargo-nextest --locked"
+    report cargo-nextest "cargo-nextest (not used by just test)" "optional; not the gate"
     report just "just" "required: cargo install just --locked"
     report gitleaks "gitleaks (just ckeletin-secrets, pre-commit)" "required: brew install gitleaks"
     report cargo-cyclonedx "cargo-cyclonedx (just ckeletin-sbom)" "optional: cargo install cargo-cyclonedx --locked"
@@ -126,8 +133,9 @@ ckeletin-deny:
 # always exits 0; it reports freshness, it does not gate the build). Mirrors
 # ckeletin-go's `task ckeletin:check:deps:outdated`, which pipes go modules
 # through go-mod-outdated -direct. Covers cargo dependencies only: the CI
-# tool pins in .github/workflows/ci.yml (just, cargo-deny, cargo-llvm-cov,
-# grype, ...) are a separate surface that neither this nor Dependabot watches.
+# tool pins in .github/workflows and .github/JUST_VERSION (just, cargo-deny,
+# cargo-llvm-cov, grype, ...) are a separate surface. Dependabot watches the
+# action SHAs; it does not read JUST_VERSION.
 # Install: cargo install cargo-outdated --locked.
 ckeletin-outdated:
     #!/usr/bin/env bash
@@ -140,7 +148,7 @@ ckeletin-outdated:
     cargo outdated --root-deps-only --workspace \
         || echo "cargo-outdated exited non-zero — informational only, not a gate."
     echo ""
-    echo "Note: CI tool pins (.github/workflows/ci.yml) are not covered — review those by hand."
+    echo "Note: CI tool pins (.github/workflows and .github/JUST_VERSION) are not covered — review those by hand."
 
 ckeletin-check: ckeletin-fmt-check ckeletin-clippy ckeletin-deny
 

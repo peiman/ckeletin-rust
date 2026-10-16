@@ -122,10 +122,23 @@ else
     exit 1
 fi
 
+# Process-local identity for the scaffold commit and the annotated tag.
+# Nothing is written into the new repository, so the next commit uses the
+# developer's own gitconfig. Callers who already exported GIT_AUTHOR_* keep it.
+# This does not consult `git var`: a host that guesses an identity would hide
+# a missing fallback, and the guess would be baked into the scaffold commit.
+ckeletin_init_git_identity() {
+    export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-ckeletin-init}"
+    export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-ckeletin-init@example.invalid}"
+    export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
+    export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
+}
+
 # 7. Reset git history — AFTER compile verification above.
 CKELETIN_VERSION=$(cat .ckeletin/VERSION)
 rm -rf .git
 git init
+ckeletin_init_git_identity
 git add -A
 git commit -m "Initial scaffold from ckeletin-rust v$CKELETIN_VERSION"
 git tag -a "v0.0.0" -m "Initial scaffold"

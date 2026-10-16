@@ -34,17 +34,16 @@ cli = ["crates/cli"]
 # Adding ANY new dep requires adding it here — which is the point.
 # Add a comment above each entry justifying why it belongs there.
 #
-# Example (workhorse shape — 8 justified domain deps):
+# Example (justified domain deps — name crates you actually depend on):
 #   [allowlists]
 #   # serde: typed serialization for domain result types (CKSPEC-ARCH-004)
 #   # serde_json: JSON serialization for API responses
-#   # serde_yaml: YAML config deserialization
 #   # indexmap: ordered map for stable output
 #   # regex: pattern matching in domain rules
 #   # chrono: timestamp types in domain events
 #   # thiserror: typed error definitions
 #   # sha2: content hashing for deduplication
-#   domain = ["serde", "serde_json", "serde_yaml", "indexmap", "regex", "chrono", "thiserror", "sha2"]
+#   domain = ["serde", "serde_json", "indexmap", "regex", "chrono", "thiserror", "sha2"]
 #   infrastructure = ["ckeletin"]
 
 [allowlists]

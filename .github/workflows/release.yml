@@ -21,6 +21,7 @@ permissions:
   contents: read
 
 env:
+  CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -28,13 +29,26 @@ jobs:
     name: Conformance gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Install just
-        run: cargo install just --version 1.50.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Conformance gate (must be green to release)
         run: just conform
@@ -68,6 +82,11 @@ jobs:
           fi
           echo "OK: tag matches package version."
 
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
   publish:
     name: Publish release
     needs: conform
@@ -75,7 +94,20 @@ jobs:
     permissions:
       contents: write # required to create the GitHub release and upload assets
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -118,3 +150,8 @@ jobs:
             --generate-notes \
             "target/release/${BIN}" \
             "target/release/${BIN}.sha256"
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+

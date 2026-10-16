@@ -1,0 +1,5 @@
+# Isolate every workspace test process before libtest starts any threads.
+# The runner passes ordinary `cargo run` executables through unchanged.
+# The script lives under .ckeletin/ so `just ckeletin-update` can replace it.
+[target.'cfg(all())']
+runner = ".ckeletin/scripts/test-runner.py"

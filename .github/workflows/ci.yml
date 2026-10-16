@@ -26,12 +26,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX
   CARGO_TERM_COLOR: always
 
 # Tool versions are PINNED, not floating: `cargo install <tool> --locked` only
 # pins the tool's own dependencies, NOT the tool version, so a breaking release
 # of just/cargo-deny/cargo-llvm-cov would otherwise break CI with no change
-# here. Bumping these is a deliberate, reviewable edit. Most action SHAs are
+# here. Bumping these is a deliberate, reviewable edit. `just` has one pin,
+# `.github/JUST_VERSION`, read after checkout. Most action SHAs are
 # kept fresh by Dependabot (github-actions ecosystem, weekly schedule).
 # Exception: dtolnay/rust-toolchain is used as a mutable semver tag (@1.96.0),
 # not a pinned SHA — it is intentionally excluded from Dependabot auto-bumps
@@ -46,7 +48,20 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
@@ -55,6 +70,11 @@ jobs:
 
       - name: Check advisories
         run: cargo deny check advisories
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
 
   unsafe-surface:
     name: Unsafe surface (advisory)
@@ -66,12 +86,25 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Install cargo-geiger
         run: cargo install cargo-geiger --version 0.13.0 --locked
@@ -79,12 +112,30 @@ jobs:
       - name: Report unsafe surface
         run: just ckeletin-geiger
 
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
   check:
     name: Check
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -92,7 +143,7 @@ jobs:
           components: clippy, rustfmt, llvm-tools-preview
 
       - name: Cache cargo
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -101,7 +152,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.8 --locked
@@ -112,6 +163,11 @@ jobs:
       - name: Run all checks
         run: just check
 
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
   init-smoke:
     name: Scaffold init smoke
     # Upstream-only. This builds a fresh project from `just init` and asserts
@@ -121,13 +177,26 @@ jobs:
     if: github.repository == 'peiman/ckeletin-rust' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -136,13 +205,18 @@ jobs:
           key: ${{ runner.os }}-cargo-initsmoke-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       # Builds a fresh scaffold from `just init` in a temp dir and runs its full
       # test suite — catches a non-compiling project AND a mangled test file
       # (cargo check alone compiles only lib + bin).
       - name: Run scaffold init smoke test
         run: just init-smoke
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
 
   coverage:
     name: Coverage (85% min)
@@ -151,7 +225,20 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -159,7 +246,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache cargo
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -171,10 +258,15 @@ jobs:
         run: cargo install cargo-llvm-cov --version 0.8.7 --locked
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Coverage (fails under 85%)
         run: just coverage
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
 
   conform:
     name: Conformance
@@ -184,13 +276,26 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so trybuild snapshots stay stable.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -199,10 +304,15 @@ jobs:
           key: ${{ runner.os }}-cargo-conform-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Conformance generator
         run: just conform
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
 
   secret-scan:
     name: Secret scan
@@ -212,7 +322,20 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history so `gitleaks git` scans every commit
 
@@ -225,6 +348,11 @@ jobs:
       - name: Scan git history for secrets
         run: gitleaks git -v --redact --no-banner --config .ckeletin/configs/gitleaks.toml
 
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
   sbom:
     name: SBOM (generate + scan)
     # Supply-chain: emit a CycloneDX SBOM for the shipped binary's dependency
@@ -233,13 +361,26 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to match rust-toolchain.toml so the dep graph resolves identically.
       - uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Cache cargo
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -251,7 +392,7 @@ jobs:
         run: cargo install cargo-cyclonedx --version 0.5.9 --locked
 
       - name: Install just
-        run: cargo install just --version 1.52.0 --locked
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
 
       - name: Install grype
         run: |
@@ -259,18 +400,87 @@ jobs:
           GRYPE_VERSION=0.114.0
           ARCHIVE="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
           curl -sSfL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${ARCHIVE}" \
-            -o "/tmp/${ARCHIVE}"
-          echo "edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343  /tmp/${ARCHIVE}" \
+            -o "${TMPDIR}/${ARCHIVE}"
+          echo "edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343  ${TMPDIR}/${ARCHIVE}" \
             | sha256sum --check --quiet
-          tar -xz -C /usr/local/bin -f "/tmp/${ARCHIVE}" grype
+          tar -xz -C /usr/local/bin -f "${TMPDIR}/${ARCHIVE}" grype
 
       - name: Generate + scan SBOM (fails on High+)
         run: just ckeletin-sbom-scan
 
       - name: Upload SBOM artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
           if-no-files-found: warn
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
+  per-commit:
+    name: Per-commit slice
+    # Cheap checks on every commit of a pull request. The Check job still runs
+    # full `just check` on the tip. This job exists so a red middle commit is
+    # visible before it is rewritten away.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-per-commit-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install just
+        run: cargo install just --version "$(tr -d '[:space:]' < .github/JUST_VERSION)" --locked
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.19.8 --locked
+
+      - name: Check each commit
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          merge_base="$(git merge-base "$base" HEAD)"
+          git rev-list --reverse "${merge_base}..HEAD" | while read -r rev; do
+            echo "Checking ${rev}"
+            git checkout --detach "$rev"
+            just ckeletin-fmt-check
+            just ckeletin-clippy
+            cargo check --workspace --all-targets
+            just ckeletin-deny
+          done
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+

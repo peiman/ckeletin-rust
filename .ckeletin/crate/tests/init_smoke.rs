@@ -60,17 +60,17 @@ fn init_produces_committed_compilable_project() {
         .expect("rsync failed");
     assert!(status.success(), "rsync copy failed");
 
-    // Initialize as "testproject". Provide a hermetic git identity so the
-    // scaffold's initial commit + tag succeed regardless of the host's git
-    // config (CI runners have none).
+    // Initialize as "testproject". init.sh supplies a process-local git
+    // identity when the caller did not export one. Clear any inherited
+    // identity so this asserts the fallback, not the host's gitconfig.
     let init = Command::new("bash")
         .arg(".ckeletin/scripts/init.sh")
         .arg("testproject")
         .current_dir(&project_dir)
-        .env("GIT_AUTHOR_NAME", "ckeletin smoke")
-        .env("GIT_AUTHOR_EMAIL", "smoke@ckeletin.test")
-        .env("GIT_COMMITTER_NAME", "ckeletin smoke")
-        .env("GIT_COMMITTER_EMAIL", "smoke@ckeletin.test")
+        .env_remove("GIT_AUTHOR_NAME")
+        .env_remove("GIT_AUTHOR_EMAIL")
+        .env_remove("GIT_COMMITTER_NAME")
+        .env_remove("GIT_COMMITTER_EMAIL")
         .output()
         .expect("init.sh failed to execute");
 
@@ -95,6 +95,25 @@ fn init_produces_committed_compilable_project() {
     assert!(
         String::from_utf8_lossy(&tags.stdout).contains("v0.0.0"),
         "init.sh did not create the v0.0.0 tag"
+    );
+    let author = Command::new("git")
+        .args(["log", "-1", "--format=%an"])
+        .current_dir(&project_dir)
+        .output()
+        .expect("git log failed");
+    assert_eq!(
+        String::from_utf8_lossy(&author.stdout).trim(),
+        "ckeletin-init",
+        "init.sh must commit as ckeletin-init when the caller sets no identity"
+    );
+    let local_name = Command::new("git")
+        .args(["config", "--local", "--get", "user.name"])
+        .current_dir(&project_dir)
+        .output()
+        .expect("git config failed");
+    assert!(
+        !local_name.status.success(),
+        "init.sh must not write user.name into the new repository"
     );
 
     // No stale "ckeletin-rust" references in project source.

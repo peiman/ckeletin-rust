@@ -1,5 +1,48 @@
 # ckeletin Framework Changelog
 
+## [0.2.28] - 2026-10-16
+
+### Fixed
+- **Health check no longer waits on the parent Cargo lock** (#55). The health
+  tests point the nested `cargo check` at `target/health-check` for both
+  `CARGO_TARGET_DIR` and `CARGO_BUILD_BUILD_DIR`. `just ckeletin-health-lock`
+  holds `target/debug/.cargo-lock` and fails if the clean-tree health test is
+  still waiting. Isolation lives in the health test, not in a runner special
+  case.
+
+### Added
+- **Private-home test launcher** (#56). `.cargo/config.toml` runs
+  `.ckeletin/scripts/test-runner.py` for test binaries. Each test gets a
+  private home and temp directory, the git identity `ckeletin-test`, and the
+  directory is removed when the child exits. `cargo run` is not wrapped.
+  `just ckeletin-update` replaces the script; the two-line config is
+  project-owned and is copied by `just init`.
+- **Per-job CI temp root** (#57). Workflows set `CKELETIN_CI_TEMP` to
+  `/tmp/ck-ci.XXXXXXXX`, create it before checkout, and delete it with
+  `if: always()`. Abandoned `ck-*` directories older than six hours are
+  removed. The SBOM archive is downloaded under `$TMPDIR`.
+- **Cheap per-commit CI slice** (#59). Pull requests run fmt, clippy,
+  `cargo check --workspace --all-targets`, and `cargo deny` on every commit.
+  Full `just check` stays on the tip. `git rebase --exec 'just check'` is the
+  local equivalent.
+
+### Changed
+- **`just test` is `cargo test --workspace`** (#60). The nextest fallback that
+  hid a failed nextest behind a second run is gone. cargo-nextest is not the
+  gate.
+- **`just init` sets a process-local git identity** (#61)
+  (`ckeletin-init` / `ckeletin-init@example.invalid`) when `GIT_AUTHOR_*` is
+  unset. It does not write `user.name` into the new repository. `just` is
+  pinned once in `.github/JUST_VERSION` (1.52.0); install steps read that
+  file after checkout.
+- **Allowlist example no longer names `serde_yaml`** (#58). The comment in
+  `ckeletin-project.toml` shows maintained crates only. The crate is not a
+  dependency and is not an advisory ignore.
+
+### Security
+- **rustls 0.23.40 → 0.23.46** clears RUSTSEC-2026-0285. It is transitive
+  through `ureq` in the conformance generator.
+
 ## [0.2.27] - 2026-06-10
 
 ### Added

@@ -4,12 +4,13 @@
 import '.ckeletin/Justfile'
 
 # Single gateway — all checks (CKSPEC-ENF-001)
-check: ckeletin-check test ckeletin-health
+check: ckeletin-check test ckeletin-health ckeletin-health-lock
     @echo "All checks passed."
 
-# Run tests
+# Run tests. cargo-nextest is not the gate: a missing binary and a failed
+# run must not look the same, and CI does not install nextest.
 test:
-    cargo nextest run --workspace 2>/dev/null || cargo test --workspace
+    cargo test --workspace
 
 # Auto-format all code (the write counterpart to `just ckeletin-fmt-check`)
 fmt:

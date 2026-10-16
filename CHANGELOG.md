@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Workhorse consumer feedback (#55–#61), framework 0.2.28.** Health checks
+  use their own Cargo target so they do not wait on the parent build lock.
+  `just test` is `cargo test` only. `just init` supplies a process-local git
+  identity. Workspace tests run under a private home and temp directory.
+  CI jobs use a short per-job temp root and delete it on the way out. Pull
+  requests run fmt, clippy, `cargo check`, and `cargo deny` on every commit.
+  The allowlist example no longer names `serde_yaml`.
+
+### Security
+- **rustls 0.23.46** clears RUSTSEC-2026-0285. Direct bumps: clap 4.6.7,
+  serde 1.0.229, serde_json 1.0.154, toml 1.1.8, trybuild 1.0.122.
+  Actions: checkout v7.0.1, cache v6.1.0, upload-artifact v7.0.2.
+
 ### Added
 - **Machine-readable command catalog (CKSPEC-AGENT-006)** (#25/#26): `catalog`
   subcommand derives a JSON catalog directly from the live clap command tree —
