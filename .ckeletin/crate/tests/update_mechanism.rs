@@ -144,10 +144,10 @@ fn make_upstream(upstream_bare: &Path, version: &str) {
     std::fs::write(crate_dir.join("lib.rs"), "// framework\n").unwrap();
     std::fs::write(ck.join("VERSION"), version).unwrap();
     std::fs::write(ck.join("sentinel.txt"), "upstream").unwrap();
-    // Stub Justfile — consumer Justfile imports this path; it must exist and
-    // be parseable by `just`, but the real recipe-under-test comes from the
-    // install_ckeletin_justfile_into() helper which overwrites it.
-    std::fs::write(ck.join("Justfile"), "# upstream stub\n").unwrap();
+    // Same Justfile and local-diff script the consumer will run. `ckeletin-update`
+    // applies no name rewrite, so a clean derived tree must match this commit
+    // byte for byte or the update stops.
+    copy_framework_update_files(&ck);
 
     git(&work, &["add", "-A"]);
     Command::new("git")
@@ -350,6 +350,14 @@ fn update_deletes_files_removed_upstream() {
     assert_eq!(result["status"], "updated", "status should be 'updated'");
     assert_eq!(result["committed"], true, "committed should be true");
     assert_eq!(result["rolled_back"], false, "rolled_back should be false");
+    assert!(
+        result["reason"].is_null(),
+        "a clean derived update has no stop reason: {result}"
+    );
+    assert_eq!(
+        result["discarded"], false,
+        "a clean derived update discards nothing"
+    );
 }
 
 // ── Finding #2a — check-compatibility leaves no staged files ─────────────────
@@ -575,14 +583,57 @@ fn update_with_explicit_tag_works() {
 
 // ── helper: install the real ckeletin Justfile into a consumer ────────────────
 
-/// Copy the real `.ckeletin/Justfile` into `consumer/.ckeletin/Justfile` so that
-/// `just ckeletin-update` in the consumer runs the actual recipe under test,
-/// and create a minimal root Justfile that imports it.
-fn install_ckeletin_justfile_into(consumer: &Path) {
+/// Copy the real update recipe and the local-diff script into `.ckeletin/`.
+///
+/// Both the upstream baseline and the consumer must get these bytes. The update
+/// command does not rewrite names, so a file that exists on only one side is a
+/// local difference and stops a clean derived update.
+fn copy_framework_update_files(ck: &Path) {
     let root = workspace_root();
-    let src = root.join(".ckeletin/Justfile");
-    let dest = consumer.join(".ckeletin/Justfile");
-    std::fs::copy(&src, &dest).unwrap_or_else(|e| panic!("failed to copy .ckeletin/Justfile: {e}"));
+    let justfile = root.join(".ckeletin/Justfile");
+    std::fs::copy(&justfile, ck.join("Justfile"))
+        .unwrap_or_else(|e| panic!("copy {}: {e}", justfile.display()));
+    let scripts = ck.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    let script = root.join(".ckeletin/scripts/framework-local-diff.sh");
+    std::fs::copy(&script, scripts.join("framework-local-diff.sh"))
+        .unwrap_or_else(|e| panic!("copy {}: {e}", script.display()));
+}
+
+fn commit_all(dir: &Path, msg: &str) {
+    git(dir, &["add", "-A"]);
+    let status = Command::new("git")
+        .args(["commit", "-m", msg])
+        .current_dir(dir)
+        .envs(git_env())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git commit failed: {msg}");
+}
+
+fn require_just(test_name: &str) -> bool {
+    if have("just") {
+        return true;
+    }
+    let ci = std::env::var("CI").unwrap_or_default();
+    if ci == "true" {
+        panic!("FAIL {test_name}: `just` required on CI");
+    }
+    eprintln!("SKIP {test_name}: `just` not on PATH");
+    false
+}
+
+fn run_just(dir: &Path, args: &[&str]) -> std::process::Output {
+    Command::new("just")
+        .args(args)
+        .current_dir(dir)
+        .envs(git_env())
+        .output()
+        .unwrap_or_else(|e| panic!("just {args:?} failed to spawn: {e}"))
+}
+
+fn install_ckeletin_justfile_into(consumer: &Path) {
+    copy_framework_update_files(&consumer.join(".ckeletin"));
 
     // Minimal root Justfile that imports the framework.
     // The root `check` recipe is needed because ckeletin-update calls `just check`.
@@ -607,4 +658,247 @@ fn install_ckeletin_justfile_into(consumer: &Path) {
         .unwrap();
     // Ignore "nothing to commit" (exit 1) — already committed.
     let _ = status;
+}
+
+struct UpdateFixture {
+    _tmp: tempfile::TempDir,
+    consumer: PathBuf,
+}
+
+/// Consumer and upstream both start at 1.0.0 with the same `.ckeletin/` bytes.
+/// `bump_to` adds a later upstream commit (new version and `newfile.txt`).
+fn update_fixture(bump_to: Option<&str>) -> UpdateFixture {
+    let tmp = tempfile::tempdir().unwrap();
+    let upstream = tmp.path().join("upstream.git");
+    let consumer = tmp.path().join("consumer");
+    make_upstream(&upstream, "1.0.0");
+    make_consumer(&consumer, &upstream, "1.0.0");
+    if let Some(version) = bump_to {
+        upstream_add_commit(
+            &upstream,
+            "bump",
+            &[
+                (".ckeletin/VERSION", version),
+                (".ckeletin/newfile.txt", "from upstream\n"),
+            ],
+            &[],
+        );
+    }
+    install_ckeletin_justfile_into(&consumer);
+    UpdateFixture {
+        _tmp: tmp,
+        consumer,
+    }
+}
+
+fn assert_stopped(out: &std::process::Output, reason: &str) -> serde_json::Value {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        !out.status.success(),
+        "expected update to stop\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "stopped", "{result}");
+    assert_eq!(result["reason"], reason, "{result}");
+    assert!(
+        result["to"].is_null(),
+        "stopped update must not name a new version: {result}"
+    );
+    assert_eq!(result["committed"], false, "{result}");
+    assert_eq!(result["discarded"], false, "{result}");
+    result
+}
+
+/// One extra committed file under `.ckeletin/` is a local difference. The
+/// update stops, prints it, and does not replace the tree.
+#[test]
+fn committed_local_file_stops_update() {
+    if !require_just("committed_local_file_stops_update") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let local = fix.consumer.join(".ckeletin/local-only.txt");
+    std::fs::write(&local, "local patch\n").unwrap();
+    commit_all(&fix.consumer, "local framework patch");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_stopped(&out, "local_difference");
+    assert!(
+        stdout.contains("local-only.txt"),
+        "stop should show the local difference\n{stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+    assert!(local.exists(), "local file must survive a stopped update");
+    assert!(
+        !fix.consumer.join(".ckeletin/newfile.txt").exists(),
+        "upstream file must not be applied when the update stops"
+    );
+}
+
+/// `discard_local=true` continues only for a committed difference, says so,
+/// and records `"discarded":true` on success.
+#[test]
+fn discard_local_true_replaces_committed_difference() {
+    if !require_just("discard_local_true_replaces_committed_difference") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let local = fix.consumer.join(".ckeletin/local-only.txt");
+    std::fs::write(&local, "local patch\n").unwrap();
+    commit_all(&fix.consumer, "local framework patch");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update", "discard_local=true"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        out.status.success(),
+        "discard_local=true should update\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        combined.contains("Discarding local framework changes."),
+        "must say it is discarding local framework changes\n{combined}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "updated", "{result}");
+    assert_eq!(result["discarded"], true, "{result}");
+    assert_eq!(result["committed"], true, "{result}");
+    assert!(result["reason"].is_null(), "{result}");
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "2.0.0"
+    );
+    assert!(!local.exists(), "discarded local file must be gone");
+    assert!(fix.consumer.join(".ckeletin/newfile.txt").exists());
+}
+
+/// An explicit discard must not bypass uncommitted changes.
+#[test]
+fn discard_local_does_not_bypass_uncommitted_changes() {
+    if !require_just("discard_local_does_not_bypass_uncommitted_changes") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let dirty = fix.consumer.join(".ckeletin/dirty.txt");
+    std::fs::write(&dirty, "not committed\n").unwrap();
+
+    let out = run_just(&fix.consumer, &["ckeletin-update", "discard_local=true"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let result = assert_stopped(&out, "uncommitted");
+    assert_eq!(result["from"], "1.0.0", "{result}");
+    assert!(
+        !stdout.contains("Discarding local framework changes."),
+        "uncommitted changes must not be discarded\n{stdout}"
+    );
+    assert!(dirty.exists());
+    assert_eq!(std::fs::read_to_string(&dirty).unwrap(), "not committed\n");
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+    assert!(!fix.consumer.join(".ckeletin/newfile.txt").exists());
+}
+
+/// Dry-run prints a committed local difference, changes nothing, and exits 0.
+#[test]
+fn dry_run_prints_local_difference_and_changes_nothing() {
+    if !require_just("dry_run_prints_local_difference_and_changes_nothing") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let local = fix.consumer.join(".ckeletin/local-only.txt");
+    std::fs::write(&local, "local patch\n").unwrap();
+    commit_all(&fix.consumer, "local framework patch");
+    let before = git(&fix.consumer, &["status", "--porcelain"]);
+
+    let out = run_just(&fix.consumer, &["ckeletin-update-dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "dry-run should exit 0\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("local-only.txt"),
+        "dry-run should print the local difference\n{stdout}"
+    );
+    assert!(local.exists());
+    assert_eq!(std::fs::read_to_string(&local).unwrap(), "local patch\n");
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+    assert!(
+        !fix.consumer.join(".ckeletin/newfile.txt").exists(),
+        "dry-run must not apply upstream files"
+    );
+    assert_eq!(
+        git(&fix.consumer, &["status", "--porcelain"]),
+        before,
+        "dry-run must not change the worktree"
+    );
+}
+
+/// Compatibility check exits 1 on a local difference and leaves the tree as found.
+#[test]
+fn compatibility_check_stops_on_local_difference_without_modifying() {
+    if !require_just("compatibility_check_stops_on_local_difference_without_modifying") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let local = fix.consumer.join(".ckeletin/local-only.txt");
+    std::fs::write(&local, "local patch\n").unwrap();
+    commit_all(&fix.consumer, "local framework patch");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update-check-compatibility"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_stopped(&out, "local_difference");
+    assert!(stdout.contains("local-only.txt"), "{stdout}");
+    assert!(local.exists());
+    assert!(!fix.consumer.join(".ckeletin/newfile.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+    assert!(
+        git(&fix.consumer, &["status", "--porcelain", ".ckeletin/"]).is_empty(),
+        "compatibility check must not modify .ckeletin/"
+    );
+}
+
+/// A VERSION upstream has never recorded cannot be compared, so the update stops.
+#[test]
+fn unknown_framework_version_stops_update() {
+    if !require_just("unknown_framework_version_stops_update") {
+        return;
+    }
+    let fix = update_fixture(None);
+    std::fs::write(fix.consumer.join(".ckeletin/VERSION"), "9.9.9\n").unwrap();
+    commit_all(&fix.consumer, "bump local framework version");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update"]);
+    let result = assert_stopped(&out, "unknown_version");
+    assert_eq!(result["from"], "9.9.9", "{result}");
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "9.9.9"
+    );
 }

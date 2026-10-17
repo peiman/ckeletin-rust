@@ -11,6 +11,13 @@
 # Do NOT edit .ckeletin/crate/tests/arch_allowlist.rs or
 # .ckeletin/crate/tests/violation_drift_guard.rs — those are framework-owned
 # and replaced on every update.
+#
+# Optional framework option defaults. Used only when no config file, environment
+# variable, or CLI flag sets the option. Unknown keys fail config load.
+# Other tables in this file are not config defaults.
+#
+# [defaults]
+# log_level = "warn"
 
 # ── Layer crate paths ─────────────────────────────────────────────────────────
 #
