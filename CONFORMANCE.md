@@ -1,9 +1,9 @@
-# Ckeletin Spec v0.12.0 — Rust Conformance Report
+# Ckeletin Spec v0.13.0 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.12.0
-**Report date:** 2026-10-16
-**Total:** 45 requirements — 45 met
+**Spec version:** 0.13.0
+**Report date:** 2026-10-17
+**Total:** 46 requirements — 46 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable
 source of truth) and is validated by `just conform` (`.ckeletin/conform/`),
@@ -139,13 +139,14 @@ continues to refine the spec.
 
 ---
 
-## Framework Updates (3/3 met)
+## Framework Updates (4/4 met)
 
 | ID | Title | Status | Evidence |
 |----|-------|--------|----------|
 | CKSPEC-UPD-001 | Notice when a newer framework version exists | met | `ckeletin-health` runs `check-framework-update.sh`; semver of `.ckeletin/VERSION`; non-fatal; off in CI; `framework_update_notice.rs` |
-| CKSPEC-UPD-002 | One command updates only the framework | met | `just ckeletin-update` replaces `.ckeletin/` only; dry-run and check-compatibility; `update_mechanism.rs` |
-| CKSPEC-UPD-003 | Machine-readable update status | met | `just ckeletin-check-update json` and `CKELETIN_UPDATE_RESULT` |
+| CKSPEC-UPD-002 | One command updates only the framework | met | `just ckeletin-update` replaces `.ckeletin/` only and stops on a local framework difference; `discard_local=true` discards a committed difference; dry-run and check-compatibility; `update_mechanism.rs` |
+| CKSPEC-UPD-003 | Machine-readable update status | met | `just ckeletin-check-update json` and `CKELETIN_UPDATE_RESULT`, including `reason` and `discarded` on a stop |
+| CKSPEC-UPD-004 | Project defaults survive a framework update | met | `[defaults]` in repo-root `ckeletin-project.toml`, embedded by `Config::load`; unknown keys fail; other tables ignored |
 
 ---
 
