@@ -405,3 +405,100 @@ fn notice_stamp_stays_out_of_the_framework_tree() {
         "notice must not dirty .ckeletin/:\n{porcelain}"
     );
 }
+
+/// The note travels with the upstream tree. A project that already has this
+/// script sees it from `just check` before it updates.
+#[test]
+fn notice_prints_the_upstream_update_note() {
+    let (keep, downstream) = pair("0.1.0", "0.1.0");
+    let upstream = keep.path().join("upstream");
+    fs::write(
+        upstream.join(".ckeletin/UPDATE_NOTE"),
+        "Delete the retired stamp.\nrm -rf .ckeletin/cache\n",
+    )
+    .unwrap();
+    bump(&upstream, "0.2.0");
+
+    let out = run_script(&downstream, &[], &[]);
+    assert_eq!(out.status, 0, "{}", out.stdout);
+    assert!(
+        out.stdout.contains("Update available: v0.1.0 → v0.2.0"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("rm -rf .ckeletin/cache"),
+        "the notice must print the upstream note.\n{}",
+        out.stdout
+    );
+
+    let check = run_script(&downstream, &["check"], &[]);
+    assert_eq!(check.status, 0, "{}", check.stdout);
+    assert!(
+        check.stdout.contains("rm -rf .ckeletin/cache"),
+        "an explicit check must print the upstream note.\n{}",
+        check.stdout
+    );
+}
+
+#[test]
+fn notice_without_an_update_note_stays_the_command_lines() {
+    let (keep, downstream) = pair("0.1.0", "0.1.0");
+    bump(&keep.path().join("upstream"), "0.2.0");
+
+    let out = run_script(&downstream, &[], &[]);
+    assert_eq!(out.status, 0, "{}", out.stdout);
+    let lines: Vec<&str> = out.stdout.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(
+        lines,
+        [
+            "Update available: v0.1.0 → v0.2.0",
+            "Run: just ckeletin-update"
+        ]
+    );
+}
+
+#[test]
+fn up_to_date_notice_does_not_print_the_update_note() {
+    let (keep, downstream) = pair("0.2.0", "0.2.0");
+    let upstream = keep.path().join("upstream");
+    fs::write(
+        upstream.join(".ckeletin/UPDATE_NOTE"),
+        "rm -rf .ckeletin/cache\n",
+    )
+    .unwrap();
+    git(&upstream, &["add", "-A"]);
+    git(&upstream, &["commit", "-m", "note only"]);
+
+    let out = run_script(&downstream, &[], &[]);
+    assert_eq!(out.status, 0, "{}", out.stdout);
+    assert!(!out.stdout.contains("Update available"), "{}", out.stdout);
+    assert!(
+        !out.stdout.contains("rm -rf"),
+        "a current framework must not print the note.\n{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn json_check_does_not_print_the_update_note() {
+    let (keep, downstream) = pair("0.1.0", "0.1.0");
+    let upstream = keep.path().join("upstream");
+    fs::write(
+        upstream.join(".ckeletin/UPDATE_NOTE"),
+        "rm -rf .ckeletin/cache\n",
+    )
+    .unwrap();
+    bump(&upstream, "0.2.0");
+
+    let out = run_script(&downstream, &["check", "json"], &[]);
+    assert_eq!(out.status, 0, "{}", out.stdout);
+    let body: serde_json::Value = serde_json::from_str(out.stdout.trim())
+        .unwrap_or_else(|e| panic!("json parse: {e}\n{}", out.stdout));
+    assert_eq!(body["update_available"], true);
+    assert!(
+        !out.stdout.contains("rm -rf"),
+        "json output must stay one object.\n{}",
+        out.stdout
+    );
+}

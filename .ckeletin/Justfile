@@ -25,6 +25,9 @@ ckeletin-health:
         echo "WARNING: .ckeletin/ has local changes (incl. added files) — ckeletin-update will stop until they are committed. If the committed tree still differs, run: just ckeletin-update discard_local=true"
         git status --porcelain .ckeletin/
     fi
+    if [ -d .ckeletin/cache ]; then
+        echo ".ckeletin/cache/ is a retired update-check stamp. Delete it: rm -rf .ckeletin/cache"
+    fi
     # Propagate compile failure so `just check` catches a BROKEN workspace.
     if cargo check --workspace -q; then
         echo "Workspace: compiles"
@@ -342,6 +345,10 @@ ckeletin-update version="main" discard_local="false" commit="true":
         git fetch ckeletin-upstream "$REQ_VERSION"
         CHECKOUT_REF="FETCH_HEAD"
     fi
+    note=$(git show "${CHECKOUT_REF}:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
+    if [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ]; then
+        printf '\n%s\n' "$note"
+    fi
     # Wholesale replacement: `git restore --source --staged --worktree` both adds
     # new files AND deletes files absent from the source ref, matching the design
     # doc's "replaced wholesale" promise. `git checkout <ref> -- <path>` does NOT
@@ -418,6 +425,10 @@ ckeletin-update-dry-run version="main":
         git fetch ckeletin-upstream "{{version}}"
         CHECKOUT_REF="FETCH_HEAD"
     fi
+    note=$(git show "${CHECKOUT_REF}:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
+    if [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ]; then
+        printf '\n%s\n' "$note"
+    fi
     LOCAL=$(cat .ckeletin/VERSION)
     REMOTE=$(git show "$CHECKOUT_REF":.ckeletin/VERSION 2>/dev/null || echo "unknown")
     echo "Current: v$LOCAL → Available: v$REMOTE"
@@ -457,6 +468,10 @@ ckeletin-update-check-compatibility version="main":
     if [ -z "$(git diff --stat HEAD "$CHECKOUT_REF" -- .ckeletin/)" ]; then
         echo "Framework is already up to date — nothing to check."
         exit 0
+    fi
+    note=$(git show "${CHECKOUT_REF}:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
+    if [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ]; then
+        printf '\n%s\n' "$note"
     fi
     # Restore the committed framework no matter how we exit. .ckeletin/ is clean
     # (checked above), so restoring from HEAD is a reliable, interrupt-safe undo.

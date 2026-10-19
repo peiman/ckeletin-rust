@@ -56,10 +56,10 @@ crates/
 
 | Recipe | Description |
 |--------|-------------|
-| `just ckeletin-health` | Verify framework version, warn on local `.ckeletin/` modifications, exit non-zero on broken workspace. On success, prints a non-fatal notice when upstream `.ckeletin/VERSION` is a newer semver (skipped in CI, opt-out `CKELETIN_SKIP_UPDATE_CHECK=1`, quiet offline) |
+| `just ckeletin-health` | Verify framework version, warn on local `.ckeletin/` modifications, exit non-zero on broken workspace. On success, prints a non-fatal notice when upstream `.ckeletin/VERSION` is a newer semver, then `.ckeletin/UPDATE_NOTE` from that upstream when the file has text (skipped in CI, opt-out `CKELETIN_SKIP_UPDATE_CHECK=1`, quiet offline). A leftover `.ckeletin/cache/` prints `rm -rf .ckeletin/cache` |
 | `just ckeletin-version` | Print framework version string |
 | `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
-| `just ckeletin-check-update [json]` | Same comparison, on demand. Pass `json` for `{"current","latest","update_available"}`. An update is a newer semver, not a string difference: `just ckeletin-check-update json` |
+| `just ckeletin-check-update [json]` | Same comparison, on demand. Pass `json` for `{"current","latest","update_available"}`. JSON does not include the note. Text mode prints `.ckeletin/UPDATE_NOTE` from upstream when an update is available. An update is a newer semver, not a string difference: `just ckeletin-check-update json` |
 | `just ckeletin-update [<branch\|tag>] [true] [false]` | Wholesale-replace `.ckeletin/` from upstream. Stops when `.ckeletin/` has uncommitted changes or a committed local difference (`CKELETIN_UPDATE_RESULT` `status` `stopped`, `reason` `uncommitted`, `local_difference`, or `unknown_version`). The second argument `true` (`discard_local`) discards only a committed difference and sets `discarded` true. `just ckeletin-update discard_local=true` is the same request and follows upstream `main`. `commit=false` applies the tree, prints `CKELETIN_UPDATE_RESULT` with `"committed":false`, and does not commit. Then two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). An existing `Cargo.lock` is refreshed with `cargo update -p ckeletin`. Result fields: `status`, `from`, `to`, `committed`, `rolled_back`, `reason`, `discarded`. Example: `just ckeletin-update v0.3.0` |
 | `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Prints a local framework difference when one exists and still changes nothing. Example: `just ckeletin-update-dry-run v0.3.0` |
 | `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework and `Cargo.lock` (interrupt-safe trap). No changes kept. Exits 1 without modifying `.ckeletin/` when the tree is uncommitted or locally different. `from` is the committed framework version. Example: `just ckeletin-update-check-compatibility v0.3.0` |
@@ -338,6 +338,7 @@ speculatively in a single-plugin CLI.
 | Problem | Fix |
 |---------|-----|
 | `just check` fails on fmt | `just fmt` then retry |
+| `just ckeletin-update` stops and the only uncommitted path is `.ckeletin/cache/` | That directory is a retired update-check stamp from framework 0.2.30. `rm -rf .ckeletin/cache`, then `just ckeletin-update` again. From 0.2.31 the update ignores it |
 | Clippy pedantic warning | Fix it or add targeted `#[allow]` with justification |
 | Violation test fails after adding dependency | You probably added a framework dep to domain — remove it |
 | `cargo deny check` fails (advisory) | See "Advisory DB floats by design" below |

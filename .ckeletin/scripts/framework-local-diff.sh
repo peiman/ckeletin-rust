@@ -53,6 +53,13 @@ if [ -z "$FROM" ]; then
     FROM=$(tr -d '[:space:]' < .ckeletin/VERSION)
 fi
 
+# 0.2.30 wrote the update-check stamp here. This script ignores the directory.
+# Say so when it is still on disk. A project still running 0.2.30 never
+# reaches this line; the README carries the same step for that jump.
+if [ -d .ckeletin/cache ]; then
+    echo ".ckeletin/cache/ is a retired update-check stamp. Delete it: rm -rf .ckeletin/cache"
+fi
+
 emit_stopped() {
     # reason is one of the fixed tokens uncommitted, unknown_version, local_difference.
     printf 'CKELETIN_UPDATE_RESULT={"status":"stopped","reason":"%s","from":"%s","to":null,"committed":false,"discarded":false}\n' \

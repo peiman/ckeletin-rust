@@ -182,6 +182,12 @@ fi
 if [ "$available" = "true" ]; then
     echo "Update available: v${LOCAL} → v${REMOTE}"
     echo "Run: just ckeletin-update"
+    # The note is the step for this upstream tree. Text only: the JSON
+    # object stays current, latest, and update_available.
+    note=$(git show "ckeletin-upstream/main:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
+    if [ -n "$(printf '%s' "$note" | tr -d '[:space:]')" ]; then
+        printf '\n%s\n' "$note"
+    fi
     exit 0
 fi
 

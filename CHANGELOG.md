@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.32.** `just check` prints `.ckeletin/UPDATE_NOTE` from
+  upstream when a newer framework version is available. The update and the
+  dry run print that note before they change the tree. A leftover
+  `.ckeletin/cache/` is named with `rm -rf .ckeletin/cache`.
 - **Framework 0.2.31.** `just ckeletin-update commit=false` applies the
   framework and does not commit. The compatibility check reports the committed
   version, leaves an uncommitted update in place, and restores `Cargo.lock`
   from HEAD. An existing lockfile is refreshed with `cargo update -p ckeletin`.
-  The update-check stamp is kept out of `.ckeletin/`. The local-change warning
+  The update-check stamp is kept out of `.ckeletin/`. If an update on 0.2.30
+  stops because the uncommitted path is `.ckeletin/cache/`, delete that
+  directory and run `just ckeletin-update` again. The local-change warning
   prints `just ckeletin-update discard_local=true`.
 
 ### Changed
