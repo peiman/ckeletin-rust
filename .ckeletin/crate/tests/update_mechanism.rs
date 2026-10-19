@@ -595,9 +595,11 @@ fn copy_framework_update_files(ck: &Path) {
         .unwrap_or_else(|e| panic!("copy {}: {e}", justfile.display()));
     let scripts = ck.join("scripts");
     std::fs::create_dir_all(&scripts).unwrap();
-    let script = root.join(".ckeletin/scripts/framework-local-diff.sh");
-    std::fs::copy(&script, scripts.join("framework-local-diff.sh"))
-        .unwrap_or_else(|e| panic!("copy {}: {e}", script.display()));
+    for name in ["framework-local-diff.sh", "framework-lock.sh"] {
+        let script = root.join(".ckeletin/scripts").join(name);
+        std::fs::copy(&script, scripts.join(name))
+            .unwrap_or_else(|e| panic!("copy {}: {e}", script.display()));
+    }
 }
 
 fn commit_all(dir: &Path, msg: &str) {
@@ -900,5 +902,194 @@ fn unknown_framework_version_stops_update() {
             .unwrap()
             .trim(),
         "9.9.9"
+    );
+}
+
+/// `commit=false` applies the update, prints the result, and does not commit.
+#[test]
+fn update_commit_false_applies_without_committing() {
+    if !require_just("update_commit_false_applies_without_committing") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let before = git(&fix.consumer, &["rev-parse", "HEAD"]);
+
+    let out = run_just(&fix.consumer, &["ckeletin-update", "commit=false"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        out.status.success(),
+        "commit=false should still apply a green update\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "updated", "{result}");
+    assert_eq!(result["committed"], false, "{result}");
+    assert_eq!(result["from"], "1.0.0", "{result}");
+    assert_eq!(result["to"], "2.0.0", "{result}");
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "2.0.0"
+    );
+    assert_eq!(
+        git(&fix.consumer, &["rev-parse", "HEAD"]),
+        before,
+        "commit=false must not create a commit"
+    );
+    assert!(
+        !git(&fix.consumer, &["status", "--porcelain", ".ckeletin/"]).is_empty(),
+        "the applied framework must remain uncommitted"
+    );
+}
+
+/// An existing lockfile is refreshed with `cargo update -p ckeletin`, which
+/// prints Cargo's "Locking" line. `cargo generate-lockfile` does not.
+#[test]
+fn update_refreshes_only_the_framework_package_in_the_lockfile() {
+    if !require_just("update_refreshes_only_the_framework_package_in_the_lockfile") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let lock_status = Command::new("cargo")
+        .args(["generate-lockfile"])
+        .current_dir(&fix.consumer)
+        .status()
+        .unwrap();
+    assert!(lock_status.success(), "cargo generate-lockfile failed");
+    commit_all(&fix.consumer, "add lockfile");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update", "commit=false"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        out.status.success(),
+        "update with a lockfile should succeed\n{combined}"
+    );
+    assert!(
+        combined.contains("Locking"),
+        "an existing Cargo.lock must be refreshed with cargo update -p ckeletin, \
+         whose output contains \"Locking\"\n{combined}"
+    );
+}
+
+/// A dirty framework that is already the update under test is refused and left
+/// in place. `from` is the committed version, not the version on disk.
+#[test]
+fn compatibility_check_does_not_restore_an_uncommitted_update() {
+    if !require_just("compatibility_check_does_not_restore_an_uncommitted_update") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    std::fs::write(fix.consumer.join(".ckeletin/VERSION"), "2.0.0\n").unwrap();
+
+    let out = run_just(&fix.consumer, &["ckeletin-update-check-compatibility"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let result = assert_stopped(&out, "uncommitted");
+    assert_eq!(
+        result["from"], "1.0.0",
+        "from must be the committed version\n{stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "2.0.0",
+        "refusing must not put the committed framework back\n{stdout}"
+    );
+    assert!(
+        !fix.consumer.join(".ckeletin/newfile.txt").exists(),
+        "refusing must not apply the upstream tree either"
+    );
+}
+
+/// The compatibility trap restores `Cargo.lock` bytes from HEAD. Regenerating
+/// the lock would drop a committed comment.
+#[test]
+fn compatibility_restores_the_committed_lockfile() {
+    if !require_just("compatibility_restores_the_committed_lockfile") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let lock_status = Command::new("cargo")
+        .args(["generate-lockfile"])
+        .current_dir(&fix.consumer)
+        .status()
+        .unwrap();
+    assert!(lock_status.success(), "cargo generate-lockfile failed");
+    let lock_path = fix.consumer.join("Cargo.lock");
+    let mut lock = std::fs::read_to_string(&lock_path).unwrap();
+    lock.push_str("# lock-bytes-must-survive\n");
+    std::fs::write(&lock_path, &lock).unwrap();
+    commit_all(&fix.consumer, "lock with a committed comment");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update-check-compatibility"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "compatibility should pass\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&lock_path).unwrap(),
+        lock,
+        "Cargo.lock must be restored from HEAD, not regenerated"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+}
+
+/// A leftover `.ckeletin/cache/` stamp must not refuse the update or get committed.
+#[test]
+fn update_ignores_a_leftover_framework_cache() {
+    if !require_just("update_ignores_a_leftover_framework_cache") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let cache = fix.consumer.join(".ckeletin/cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(".last-update-check"), "1\n").unwrap();
+
+    let out = run_just(&fix.consumer, &["ckeletin-update"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        out.status.success(),
+        "a cache stamp must not block the update\n{combined}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "updated", "{result}");
+    let committed = git(
+        &fix.consumer,
+        &["show", "--name-only", "--pretty=format:", "HEAD"],
+    );
+    assert!(
+        !committed.contains(".ckeletin/cache"),
+        "the update commit must not record the cache\n{committed}"
+    );
+}
+
+/// The health warning names the command that discards a committed local difference.
+#[test]
+fn health_warning_names_the_discard_command() {
+    if !require_just("health_warning_names_the_discard_command") {
+        return;
+    }
+    let fix = update_fixture(None);
+    std::fs::write(fix.consumer.join(".ckeletin/local.txt"), "x\n").unwrap();
+
+    let out = run_just(&fix.consumer, &["ckeletin-health"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("just ckeletin-update discard_local=true"),
+        "the warning must name the command\nstdout: {stdout}\nstderr: {stderr}"
     );
 }

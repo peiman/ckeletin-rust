@@ -17,3 +17,6 @@ sbom.cdx.json
 # Local upstream-only working docs (reviews, consumer/dogfooding feedback) —
 # kept on disk as records, never committed. Folder ignored so no filenames are listed.
 local-feedback/
+
+# Retired framework update-check stamp. Current stamps live in the git directory.
+.ckeletin/cache/
