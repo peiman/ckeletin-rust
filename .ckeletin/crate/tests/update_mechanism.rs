@@ -1074,6 +1074,10 @@ fn update_ignores_a_leftover_framework_cache() {
         !committed.contains(".ckeletin/cache"),
         "the update commit must not record the cache\n{committed}"
     );
+    assert!(
+        combined.contains("rm -rf .ckeletin/cache"),
+        "the update must say how to remove the retired stamp\n{combined}"
+    );
 }
 
 /// The health warning names the command that discards a committed local difference.
@@ -1091,5 +1095,30 @@ fn health_warning_names_the_discard_command() {
     assert!(
         stdout.contains("just ckeletin-update discard_local=true"),
         "the warning must name the command\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// Health names a leftover update-check stamp even when that directory is
+/// the only thing under `.ckeletin/` that git does not track.
+#[test]
+fn health_names_a_leftover_framework_cache() {
+    if !require_just("health_names_a_leftover_framework_cache") {
+        return;
+    }
+    let fix = update_fixture(None);
+    let cache = fix.consumer.join(".ckeletin/cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(".last-update-check"), "1\n").unwrap();
+
+    let out = run_just(&fix.consumer, &["ckeletin-health"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a leftover cache must not fail health\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("rm -rf .ckeletin/cache"),
+        "health must say how to remove the retired stamp\nstdout: {stdout}\nstderr: {stderr}"
     );
 }

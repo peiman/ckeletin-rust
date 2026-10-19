@@ -38,6 +38,19 @@ just init my-app
 > been initialized (name in `Cargo.toml` no longer matches the scaffold slug) and
 > exits with an explanation. Pass `true` as the second positional argument to override: `just init my-app true`.
 
+## Updating the framework
+
+`just ckeletin-update` replaces `.ckeletin/` and leaves the rest of the project in place.
+
+Framework 0.2.30 wrote an update-check stamp at `.ckeletin/cache/`. That update stops and reports uncommitted changes. The directory is not one of your changes. Delete it and run the update again:
+
+```bash
+rm -rf .ckeletin/cache
+just ckeletin-update
+```
+
+From framework 0.2.31 on, the update ignores that directory. `just check` prints `.ckeletin/UPDATE_NOTE` from upstream when a newer framework version is available. That note is the step to take before you update.
+
 ```bash
 # Run the scaffold commands
 cargo run -p cli -- ping

@@ -1,0 +1,4 @@
+If `just ckeletin-update` stops and the uncommitted path is `.ckeletin/cache/`, that directory is a retired update-check stamp from framework 0.2.30. It is not one of your changes. Delete it and run the update again.
+
+rm -rf .ckeletin/cache
+just ckeletin-update

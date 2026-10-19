@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-10-19
+
+### Fixed
+
+- **`just check` prints the upstream update note.** When a newer framework
+  version is available, the notice and `just ckeletin-check-update` print
+  `.ckeletin/UPDATE_NOTE` from upstream after the update command. The JSON
+  result stays `current`, `latest`, and `update_available`. The update and
+  the dry run print that same note after they fetch and before they show
+  what will change.
+- **A leftover `.ckeletin/cache/` is named when you update or run health.**
+  The line is `Delete it: rm -rf .ckeletin/cache`. Framework 0.2.30 stops
+  on that directory before it can read this note. Delete the directory and
+  run `just ckeletin-update` again.
+
 ## [0.2.31] - 2026-10-19
 
 ### Fixed
