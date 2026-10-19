@@ -117,8 +117,9 @@ fi
 
 should_fetch=1
 if [ "$mode" = "notice" ]; then
-    CACHE_DIR=".ckeletin/cache"
-    STAMP="${CACHE_DIR}/.last-update-check"
+    # Outside the framework tree. A stamp inside .ckeletin/ is a dirty
+    # worktree, and the update then refuses to run.
+    STAMP=$(git rev-parse --git-path ckeletin-last-update-check 2> /dev/null || true)
     TTL_SECONDS="${CKELETIN_UPDATE_CHECK_TTL:-86400}"
     case "$TTL_SECONDS" in
         '' | *[!0-9]*) TTL_SECONDS=86400 ;;
@@ -148,8 +149,10 @@ if [ "$should_fetch" -eq 1 ]; then
         fetched=1
     fi
     if [ "$mode" = "notice" ]; then
-        mkdir -p "$CACHE_DIR" 2> /dev/null || true
-        echo "${NOW:-0}" > "$STAMP" 2> /dev/null || true
+        if [ -n "$STAMP" ]; then
+            mkdir -p "$(dirname "$STAMP")" 2> /dev/null || true
+            echo "${NOW:-0}" > "$STAMP" 2> /dev/null || true
+        fi
     fi
 elif git rev-parse --verify --quiet ckeletin-upstream/main > /dev/null 2>&1; then
     fetched=1

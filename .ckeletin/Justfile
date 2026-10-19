@@ -19,10 +19,10 @@ ckeletin-health:
     #!/usr/bin/env bash
     set -uo pipefail
     echo "ckeletin framework v{{ckeletin_version}}"
-    if [ -z "$(git status --porcelain .ckeletin/)" ]; then
+    if [ -z "$(git status --porcelain -- .ckeletin/ ':(exclude).ckeletin/cache')" ]; then
         echo "Status: clean"
     else
-        echo "WARNING: .ckeletin/ has local changes (incl. added files) — ckeletin-update will stop until they are committed and, if the committed tree differs, passed discard_local=true"
+        echo "WARNING: .ckeletin/ has local changes (incl. added files) — ckeletin-update will stop until they are committed. If the committed tree still differs, run: just ckeletin-update discard_local=true"
         git status --porcelain .ckeletin/
     fi
     # Propagate compile failure so `just check` catches a BROKEN workspace.
@@ -284,23 +284,34 @@ ckeletin-check-update format="text":
 
 # Update framework from upstream.
 # discard_local=true discards a committed local difference. It does not
-# discard uncommitted changes.
-ckeletin-update version="main" discard_local="false":
+# discard uncommitted changes. commit=false applies the tree and prints
+# CKELETIN_UPDATE_RESULT without committing.
+ckeletin-update version="main" discard_local="false" commit="true":
     #!/usr/bin/env bash
     set -euo pipefail
-    # just passes recipe arguments by position. `just ckeletin-update v1.0.0 true`
-    # sets both. `just ckeletin-update discard_local=true` is the one-argument
-    # form: the whole token lands in `version`, and it means discard and follow main.
+    # just passes recipe arguments by position. A `name=value` token lands in
+    # whichever slot it was typed into, not in the parameter of that name.
+    # `just ckeletin-update v1.0.0 true false` sets all three.
+    # `just ckeletin-update discard_local=true` follows main and discards.
+    # `just ckeletin-update commit=false` follows main and does not commit.
     REQ_VERSION="{{version}}"
     REQ_DISCARD="{{discard_local}}"
-    if [ "$REQ_VERSION" = "discard_local=true" ]; then
-        REQ_VERSION="main"
-        REQ_DISCARD="true"
-    elif [ "$REQ_DISCARD" = "discard_local=true" ]; then
-        REQ_DISCARD="true"
-    fi
+    REQ_COMMIT="{{commit}}"
+    for token in "$REQ_VERSION" "$REQ_DISCARD" "$REQ_COMMIT"; do
+        case "$token" in
+            discard_local=true) REQ_DISCARD=true ;;
+            commit=false) REQ_COMMIT=false ;;
+            commit=true) REQ_COMMIT=true ;;
+        esac
+    done
+    case "$REQ_VERSION" in
+        discard_local=true | commit=false | commit=true) REQ_VERSION=main ;;
+    esac
     if [ "$REQ_DISCARD" != "true" ]; then
-        REQ_DISCARD="false"
+        REQ_DISCARD=false
+    fi
+    if [ "$REQ_COMMIT" != "false" ]; then
+        REQ_COMMIT=true
     fi
     MARK=$(mktemp)
     cleanup_mark() { rm -f "$MARK"; }
@@ -316,7 +327,9 @@ ckeletin-update version="main" discard_local="false":
     if [ "$state" = "true" ]; then
         DISCARDED=true
     fi
-    OLD_VERSION=$(cat .ckeletin/VERSION)
+    OLD_VERSION=$(git show HEAD:.ckeletin/VERSION | tr -d '[:space:]')
+    # shellcheck source=scripts/framework-lock.sh
+    source .ckeletin/scripts/framework-lock.sh
     if ! git remote | grep -q ckeletin-upstream; then
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
@@ -335,14 +348,14 @@ ckeletin-update version="main" discard_local="false":
     # delete files absent from the ref.
     git restore --source="$CHECKOUT_REF" --staged --worktree -- .ckeletin/
     NEW_VERSION=$(cat .ckeletin/VERSION)
-    cargo generate-lockfile
+    refresh_framework_lock
     # Tier 1: must still COMPILE. A non-compiling update is incompatible — roll
     # back fully (the framework crate or a moved API broke the build).
     if ! cargo check --workspace; then
         echo "Error: workspace does not compile after update. Rolling back."
         # Restore HEAD state wholesale: removes added files, restores deleted files.
         git restore --source=HEAD --staged --worktree -- .ckeletin/
-        cargo generate-lockfile
+        restore_framework_lock
         # Rollback restored the previous tree, so a discard did not stick.
         printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true,"reason":null,"discarded":false}\n' "$OLD_VERSION" "$NEW_VERSION"
         exit 1
@@ -367,10 +380,17 @@ ckeletin-update version="main" discard_local="false":
     echo "Updated ckeletin framework: v$OLD_VERSION → v$NEW_VERSION"
     echo ""
     git diff HEAD -- .ckeletin/CHANGELOG.md || true
-    git add .ckeletin/ Cargo.lock
-    git commit -m "chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION"
+    if [ "$REQ_COMMIT" = "true" ]; then
+        git add -- .ckeletin/ Cargo.lock ':(exclude).ckeletin/cache'
+        git commit -m "chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION"
+        COMMITTED=true
+    else
+        echo "Applied and left uncommitted."
+        echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
+        COMMITTED=false
+    fi
     # Final machine-readable verdict for an autonomous driver (workhorse).
-    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":true,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$DISCARDED"
+    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":%s,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$COMMITTED" "$DISCARDED"
 
 # Preview update without applying. A local difference is printed. Nothing is modified.
 ckeletin-update-dry-run version="main":
@@ -443,11 +463,18 @@ ckeletin-update-check-compatibility version="main":
     # `git restore --source=HEAD --staged --worktree` removes added files AND
     # restores deleted/modified files, leaving porcelain clean (unlike `git checkout
     # HEAD -- .ckeletin/` which leaves upstream-added files staged).
-    restore() { git restore --source=HEAD --staged --worktree -- .ckeletin/ && cargo generate-lockfile; }
+    # shellcheck source=scripts/framework-lock.sh
+    source .ckeletin/scripts/framework-lock.sh
+    # Restore the committed framework and its lockfile. Sourcing the helpers
+    # above keeps restore_framework_lock available after .ckeletin/ is put back.
+    restore() {
+        git restore --source=HEAD --staged --worktree -- .ckeletin/
+        restore_framework_lock
+    }
     trap restore EXIT
     # Wholesale replacement — see ckeletin-update for rationale.
     git restore --source="$CHECKOUT_REF" --staged --worktree -- .ckeletin/
-    cargo generate-lockfile
+    refresh_framework_lock
     # Run the FULL gate (`just check`), not just `cargo check` — so this also
     # surfaces clippy/test failures a release might introduce (e.g. tightened
     # lints), giving an early warning before `just ckeletin-update` is run.

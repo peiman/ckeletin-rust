@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-10-19
+
+### Fixed
+
+- **`just ckeletin-update commit=false` applies the tree and does not commit.**
+  The result line is printed on that path with `"committed":false`. A driver
+  that commits in its own step can use the recipe.
+- **The compatibility check leaves an uncommitted update in place.** A dirty
+  `.ckeletin/` is refused without restoring it. `from` is the committed
+  `.ckeletin/VERSION`. On the way out, `Cargo.lock` is restored from HEAD.
+- **An existing `Cargo.lock` is refreshed with `cargo update -p ckeletin`.**
+  `cargo generate-lockfile` runs only when the project has no lockfile yet,
+  so an update does not re-resolve the rest of the workspace.
+- **The update-check stamp lives in the git directory.** A file under
+  `.ckeletin/cache/` made the framework tree dirty and the next update
+  refused. A leftover cache directory does not block the update and is not
+  committed. Delete it if an update on 0.2.30 is refused because of it.
+- **The local-change warning names the command.** It prints
+  `just ckeletin-update discard_local=true`.
+
 ## [0.2.30] - 2026-10-17
 
 ### Added

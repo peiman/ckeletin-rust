@@ -46,7 +46,12 @@ if [ ! -f .ckeletin/VERSION ]; then
     exit 1
 fi
 
-FROM=$(tr -d '[:space:]' < .ckeletin/VERSION)
+# `from` is the committed framework version. The worktree can already hold
+# the update under test, and reporting the version on disk hides that baseline.
+FROM=$(git show HEAD:.ckeletin/VERSION 2> /dev/null | tr -d '[:space:]' || true)
+if [ -z "$FROM" ]; then
+    FROM=$(tr -d '[:space:]' < .ckeletin/VERSION)
+fi
 
 emit_stopped() {
     # reason is one of the fixed tokens uncommitted, unknown_version, local_difference.
@@ -54,13 +59,17 @@ emit_stopped() {
         "$1" "$FROM"
 }
 
+# `.ckeletin/cache/` is a retired update-check stamp. It is not a local
+# framework change, and a leftover file must not refuse the update.
+framework_paths=(.ckeletin/ ':(exclude).ckeletin/cache')
+
 show_worktree_diff() {
-    git status --porcelain -- .ckeletin/ || true
-    git --no-pager diff -- .ckeletin/ || true
-    git --no-pager diff --cached -- .ckeletin/ || true
+    git status --porcelain -- "${framework_paths[@]}" || true
+    git --no-pager diff -- .ckeletin/ ':(exclude).ckeletin/cache' || true
+    git --no-pager diff --cached -- .ckeletin/ ':(exclude).ckeletin/cache' || true
 }
 
-if [ -n "$(git status --porcelain -- .ckeletin/)" ]; then
+if [ -n "$(git status --porcelain -- "${framework_paths[@]}")" ]; then
     if [ "$mode" = "dry-run" ]; then
         echo "Uncommitted changes in .ckeletin/:"
     else
@@ -115,20 +124,21 @@ if [ -z "$baseline" ]; then
 fi
 
 has_local_diff=false
-if ! git --no-pager diff --quiet "$baseline" HEAD -- .ckeletin/; then
+if ! git --no-pager diff --quiet "$baseline" HEAD -- .ckeletin/ ':(exclude).ckeletin/cache'; then
     has_local_diff=true
 fi
 
 if [ "$has_local_diff" = "true" ]; then
     if [ "$mode" = "update" ] && [ "$discard_local" = "true" ]; then
         echo "Discarding local framework changes."
-        git --no-pager diff --stat "$baseline" HEAD -- .ckeletin/ || true
+        git --no-pager diff --stat "$baseline" HEAD -- .ckeletin/ ':(exclude).ckeletin/cache' || true
         write_marker true
         exit 0
     fi
     echo "Local framework difference: .ckeletin/ does not match upstream ${FROM} (${baseline})."
-    git --no-pager diff --stat "$baseline" HEAD -- .ckeletin/ || true
-    git --no-pager diff "$baseline" HEAD -- .ckeletin/ || true
+    echo "Run: just ckeletin-update discard_local=true"
+    git --no-pager diff --stat "$baseline" HEAD -- .ckeletin/ ':(exclude).ckeletin/cache' || true
+    git --no-pager diff "$baseline" HEAD -- .ckeletin/ ':(exclude).ckeletin/cache' || true
     if [ "$mode" = "dry-run" ]; then
         write_marker false
         exit 0

@@ -362,3 +362,46 @@ fn health_recipe_runs_the_notice() {
         "ckeletin-health must call the shared update script so consumers get the notice after ckeletin-update.\n{text}"
     );
 }
+
+/// The notice stamp must not sit inside `.ckeletin/`. A file there makes
+/// `git status --porcelain .ckeletin/` dirty and the next update refuses.
+#[test]
+fn notice_stamp_stays_out_of_the_framework_tree() {
+    let (_tmp, downstream) = pair("0.1.0", "0.1.0");
+    let out = run_script(&downstream, &[], &[]);
+    assert_eq!(out.status, 0, "{}", out.stdout);
+    assert!(
+        !downstream.join(".ckeletin/cache").exists(),
+        "the update-check stamp must not live under .ckeletin/"
+    );
+    let stamp_out = Command::new("git")
+        .args(["rev-parse", "--git-path", "ckeletin-last-update-check"])
+        .current_dir(&downstream)
+        .output()
+        .unwrap();
+    assert!(stamp_out.status.success());
+    let stamp = String::from_utf8_lossy(&stamp_out.stdout)
+        .trim()
+        .to_string();
+    let stamp_path = Path::new(&stamp);
+    let stamp_path = if stamp_path.is_absolute() {
+        stamp_path.to_path_buf()
+    } else {
+        downstream.join(stamp_path)
+    };
+    assert!(
+        stamp_path.is_file(),
+        "expected stamp at {}",
+        stamp_path.display()
+    );
+    let status_out = Command::new("git")
+        .args(["status", "--porcelain", "--", ".ckeletin/"])
+        .current_dir(&downstream)
+        .output()
+        .unwrap();
+    let porcelain = String::from_utf8_lossy(&status_out.stdout);
+    assert!(
+        porcelain.trim().is_empty(),
+        "notice must not dirty .ckeletin/:\n{porcelain}"
+    );
+}
