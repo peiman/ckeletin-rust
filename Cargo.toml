@@ -41,7 +41,7 @@ thiserror = "2"
 # Dev dependencies
 assert_cmd = "2"
 predicates = "3"
-rstest = "0.26"
+rstest = "0.28"
 tempfile = "3"
 trybuild = "1"
 # Fuzzing — runs on STABLE Rust with --sanitizer NONE; corpus replays as
