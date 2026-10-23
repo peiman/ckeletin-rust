@@ -93,7 +93,7 @@ fi
 if ! git remote | grep -qx ckeletin-upstream; then
     git remote add ckeletin-upstream "$upstream_url"
 fi
-git fetch ckeletin-upstream
+git fetch --quiet --no-tags ckeletin-upstream main:refs/remotes/ckeletin-upstream/main
 
 if ! git rev-parse --verify --quiet ckeletin-upstream/main >/dev/null; then
     echo "Error: ckeletin-upstream/main is not available."

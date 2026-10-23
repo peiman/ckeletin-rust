@@ -1,0 +1,11 @@
+[package]
+name = "ckeletin-catalog-clap"
+version = "0.2.33"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Derive a ckeletin catalog from a clap command tree."
+
+[dependencies]
+ckeletin = { path = "../crate" }
+clap = { workspace = true }

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.33.** Per-commit CI checks licenses, bans, and sources.
+  Advisories stay on the tip. A dry run fetches one ref. A failed `just check`
+  after an update puts the gate output in `CKELETIN_UPDATE_RESULT` `reason`.
+  An update from 0.2.30 that re-resolved `Cargo.lock` is repaired with
+  `git checkout HEAD -- Cargo.lock` and `cargo update -p ckeletin`. The catalog
+  walk in `.ckeletin/catalog-clap` fills the optional fields clap can derive.
+- **Dependencies.** rstest 0.28.0, sha2 0.11.1, thiserror 2.0.21, ureq 3.5.0,
+  rustls-webpki 0.103.16, and webpki-roots 1.0.10.
 - **Framework 0.2.32.** `just check` prints `.ckeletin/UPDATE_NOTE` from
   upstream when a newer framework version is available. The update and the
   dry run print that note before they change the tree. A leftover

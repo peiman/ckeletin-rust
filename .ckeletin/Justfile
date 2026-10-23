@@ -135,6 +135,13 @@ ckeletin-clippy:
 ckeletin-deny:
     cargo deny check
 
+# Advisories answer a question about today's database, not about the commit.
+# A historical commit cannot be made to pass an advisory that landed later.
+# Per-commit CI uses this recipe. `just check` still runs `ckeletin-deny`,
+# which includes advisories, on the tip.
+ckeletin-deny-history:
+    cargo deny check licenses bans sources
+
 # Report direct dependencies with newer published versions (informational —
 # always exits 0; it reports freshness, it does not gate the build). Mirrors
 # ckeletin-go's `task ckeletin:check:deps:outdated`, which pipes go modules
@@ -336,13 +343,13 @@ ckeletin-update version="main" discard_local="false" commit="true":
     if ! git remote | grep -q ckeletin-upstream; then
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
-    git fetch ckeletin-upstream
+    git fetch --quiet --no-tags ckeletin-upstream main:refs/remotes/ckeletin-upstream/main
     # Resolve the ref: branch refs live under refs/remotes/ckeletin-upstream/;
-    # tags must be fetched explicitly and accessed via refs/tags/ or FETCH_HEAD.
+    # tags must be fetched explicitly and accessed via FETCH_HEAD.
     if [ "$REQ_VERSION" = "main" ]; then
         CHECKOUT_REF="ckeletin-upstream/main"
     else
-        git fetch ckeletin-upstream "$REQ_VERSION"
+        git fetch --quiet ckeletin-upstream "$REQ_VERSION"
         CHECKOUT_REF="FETCH_HEAD"
     fi
     note=$(git show "${CHECKOUT_REF}:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
@@ -373,16 +380,25 @@ ckeletin-update version="main" discard_local="false" commit="true":
     # workhorse (2026-06-04). On failure DON'T roll back and DON'T commit: the
     # update is left in the working tree so you can fix the new violations and
     # commit yourself.
-    if ! just check; then
+    check_log=$(mktemp)
+    if ! just check >"$check_log" 2>&1; then
+        cat "$check_log"
         echo ""
         echo "Update to v$NEW_VERSION applied to the working tree, but 'just check' fails."
         echo "This release likely tightened a gate (e.g. clippy). Fix the violations"
         echo "above (real fix, or a reasoned #[allow]), then commit:"
         echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
-        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$DISCARDED"
+        reason_text=$(tail -n 20 "$check_log")
+        reason_text=${reason_text//\\/\\\\}
+        reason_text=${reason_text//\"/\\\"}
+        reason_text=${reason_text//$'\n'/\\n}
+        reason_text=${reason_text//$'\r'/}
+        rm -f "$check_log"
+        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false,"reason":"%s","discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$reason_text" "$DISCARDED"
         exit 1
     fi
+    rm -f "$check_log"
     echo ""
     echo "Updated ckeletin framework: v$OLD_VERSION → v$NEW_VERSION"
     echo ""
@@ -416,13 +432,13 @@ ckeletin-update-dry-run version="main":
     if ! git remote | grep -q ckeletin-upstream; then
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
-    git fetch ckeletin-upstream
+    git fetch --quiet --no-tags ckeletin-upstream main:refs/remotes/ckeletin-upstream/main
     # Tag resolution: branches live under refs/remotes/ckeletin-upstream/; tags
     # must be fetched explicitly.
     if [ "{{version}}" = "main" ]; then
         CHECKOUT_REF="ckeletin-upstream/main"
     else
-        git fetch ckeletin-upstream "{{version}}"
+        git fetch --quiet ckeletin-upstream "{{version}}"
         CHECKOUT_REF="FETCH_HEAD"
     fi
     note=$(git show "${CHECKOUT_REF}:.ckeletin/UPDATE_NOTE" 2> /dev/null || true)
@@ -458,11 +474,11 @@ ckeletin-update-check-compatibility version="main":
     if ! git remote | grep -q ckeletin-upstream; then
         git remote add ckeletin-upstream {{ckeletin_upstream_url}}
     fi
-    git fetch ckeletin-upstream
+    git fetch --quiet --no-tags ckeletin-upstream main:refs/remotes/ckeletin-upstream/main
     if [ "{{version}}" = "main" ]; then
         CHECKOUT_REF="ckeletin-upstream/main"
     else
-        git fetch ckeletin-upstream "{{version}}"
+        git fetch --quiet ckeletin-upstream "{{version}}"
         CHECKOUT_REF="FETCH_HEAD"
     fi
     if [ -z "$(git diff --stat HEAD "$CHECKOUT_REF" -- .ckeletin/)" ]; then

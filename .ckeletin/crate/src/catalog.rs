@@ -15,13 +15,19 @@
 //!   - flag: `long`, `required`, `takes_value`
 //!   - top level: `name`, `description`, `global_flags` (listed once), `commands`
 //!
-//! Optional (this impl fills what clap derives): flag `short`, `description`,
-//! `default`, `possible_values`.
+//! Optional (emit where the CLI framework derives them, omit otherwise):
+//! flag `short`, `description`, `default`, `possible_values`, `aliases`,
+//! `value_type` (the value name shown in help, such as `FILE`), `help_heading`;
+//! command `aliases`, `positional_args`, `valid_args`, `external_subcommands`,
+//! `help_heading`.
 //!
 //! Defining the types in the framework crate (not the cli crate) makes the
 //! schema a single shared Rust type: a derived project literally cannot emit a
-//! wrong-shaped catalog. The clap → `Catalog` walk lives in the cli crate
-//! (clap is cli-only), which is the only implementation-specific part.
+//! wrong-shaped catalog. The clap walk lives in `.ckeletin/catalog-clap`.
+//! This crate does not depend on clap (CKSPEC-ARCH-003). Clap 4.6 does not
+//! expose a command deprecation string or the help heading of each subcommand,
+//! so those are not fields: a value that cannot be derived is omitted, not
+//! invented.
 
 use serde::Serialize;
 use std::fmt;
@@ -48,6 +54,28 @@ pub struct CatalogFlag {
     /// Allowed values for enumerated flags, e.g. `--output text|json` (optional).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub possible_values: Vec<String>,
+    /// Other long names besides `long` (optional).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    /// Value name shown in help, such as `FILE` (optional rich type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<String>,
+    /// Help heading this flag is listed under (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help_heading: Option<String>,
+}
+
+/// A positional argument.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CatalogPositional {
+    pub name: String,
+    pub required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub possible_values: Vec<String>,
 }
 
 /// A command and its subcommands.
@@ -57,6 +85,23 @@ pub struct CatalogCommand {
     pub description: String,
     pub flags: Vec<CatalogFlag>,
     pub commands: Vec<CatalogCommand>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub positional_args: Vec<CatalogPositional>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub valid_args: Vec<String>,
+    /// True when the command accepts subcommands it does not enumerate.
+    #[serde(skip_serializing_if = "is_false")]
+    pub external_subcommands: bool,
+    /// Heading this command is listed under in its parent's help (optional).
+    /// Clap 4.6 stores one subcommand heading on the parent, not one per child.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help_heading: Option<String>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// The whole command surface of a CLI.
@@ -68,6 +113,9 @@ pub struct Catalog {
     /// each command's `flags`).
     pub global_flags: Vec<CatalogFlag>,
     pub commands: Vec<CatalogCommand>,
+    /// True when the root command accepts subcommands it does not enumerate.
+    #[serde(skip_serializing_if = "is_false")]
+    pub external_subcommands: bool,
 }
 
 fn fmt_flag(f: &mut fmt::Formatter<'_>, flag: &CatalogFlag) -> fmt::Result {
@@ -105,6 +153,7 @@ mod tests {
         Catalog {
             name: "demo".into(),
             description: "A demo CLI".into(),
+            external_subcommands: false,
             global_flags: vec![CatalogFlag {
                 long: "output".into(),
                 required: false,
@@ -113,12 +162,20 @@ mod tests {
                 description: Some("Output format".into()),
                 default: Some("text".into()),
                 possible_values: vec!["text".into(), "json".into()],
+                aliases: vec![],
+                value_type: Some("FORMAT".into()),
+                help_heading: None,
             }],
             commands: vec![CatalogCommand {
                 name: "ping".into(),
                 description: "Check connectivity".into(),
                 flags: vec![],
                 commands: vec![],
+                aliases: vec![],
+                positional_args: vec![],
+                valid_args: vec![],
+                external_subcommands: false,
+                help_heading: None,
             }],
         }
     }
@@ -140,6 +197,9 @@ mod tests {
             description: None,
             default: None,
             possible_values: vec![],
+            aliases: vec![],
+            value_type: None,
+            help_heading: None,
         })
         .unwrap();
         assert!(bare.get("short").is_none());

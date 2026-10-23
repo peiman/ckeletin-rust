@@ -228,7 +228,9 @@ fn every_job_prepares_and_removes_its_temp_root() {
                     && job.body.contains("just ckeletin-fmt-check")
                     && job.body.contains("just ckeletin-clippy")
                     && job.body.contains("cargo check --workspace --all-targets")
-                    && job.body.contains("just ckeletin-deny")
+                    && job.body.contains("just ckeletin-deny-history")
+                    && job.body.contains("not on each historical commit")
+                    && !job.body.contains("just ckeletin-deny\n")
                     && job.body.contains("github.event_name == 'pull_request'");
             }
             count += 1;
