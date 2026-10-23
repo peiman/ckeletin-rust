@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-10-23
+
+### Fixed
+
+- **Per-commit CI does not re-check advisories.** `just ckeletin-deny-history`
+  checks licenses, bans, and sources. `just check` still runs
+  `just ckeletin-deny`, which includes advisories, on the tip. A historical
+  commit cannot be made to pass an advisory that landed later. A consumer
+  whose per-commit job still calls `just ckeletin-deny` fails the framework
+  CI test until that job calls `just ckeletin-deny-history`.
+- **A dry run fetches one ref.** The fetch updates `ckeletin-upstream/main`,
+  or the branch or tag you named. It does not list every upstream branch.
+- **A failing `just check` after an update names the failure.**
+  `CKELETIN_UPDATE_RESULT` uses `status` `check_failed`. `reason` is the last
+  lines of that gate. The tree stays uncommitted.
+- **An update from framework 0.2.30 re-resolves the whole `Cargo.lock`.**
+  That command cannot print this note. After it finishes, restore the lock
+  and refresh only the framework crate: `git checkout HEAD -- Cargo.lock`
+  then `cargo update -p ckeletin`. The same text is in `.ckeletin/UPDATE_NOTE`.
+
+### Added
+
+- **The clap catalog walk ships in the framework.** `.ckeletin/catalog-clap`
+  fills the optional catalog fields clap 4.6 can derive: flag short,
+  description, default, possible values, aliases, value type, and help
+  heading; command aliases, positionals, valid args, external subcommands,
+  and the heading a command is listed under. Clap 4.6 has no command
+  deprecation getter and no heading per subcommand, so those are not fields.
+  The framework runtime crate still does not depend on clap. Add
+  `.ckeletin/catalog-clap` to workspace members and call
+  `ckeletin_catalog_clap::build` on the same `Command` the parser uses.
+
 ## [0.2.32] - 2026-10-19
 
 ### Fixed

@@ -1122,3 +1122,94 @@ fn health_names_a_leftover_framework_cache() {
         "health must say how to remove the retired stamp\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
+
+/// A dry run fetches the requested ref and does not download every upstream branch.
+#[test]
+fn dry_run_fetches_only_the_requested_ref() {
+    if !require_just("dry_run_fetches_only_the_requested_ref") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    let upstream = git(&fix.consumer, &["remote", "get-url", "ckeletin-upstream"]);
+    git(
+        Path::new(&upstream),
+        &["branch", "noise-branch-marker", "main"],
+    );
+
+    let out = run_just(&fix.consumer, &["ckeletin-update-dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(out.status.success(), "dry-run should exit 0\n{combined}");
+    git(
+        &fix.consumer,
+        &[
+            "rev-parse",
+            "--verify",
+            "refs/remotes/ckeletin-upstream/main",
+        ],
+    );
+    let noise = Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "refs/remotes/ckeletin-upstream/noise-branch-marker",
+        ])
+        .current_dir(&fix.consumer)
+        .status()
+        .unwrap();
+    assert!(
+        !noise.success(),
+        "dry-run must not fetch unrelated upstream branches"
+    );
+    assert!(
+        !combined.contains("noise-branch-marker"),
+        "dry-run output must not list unrelated branches\n{combined}"
+    );
+}
+
+/// A failing project gate stays applied and puts the gate output in the result reason.
+#[test]
+fn check_failed_reason_includes_the_gate_output() {
+    if !require_just("check_failed_reason_includes_the_gate_output") {
+        return;
+    }
+    let fix = update_fixture(Some("2.0.0"));
+    std::fs::write(
+        fix.consumer.join("Justfile"),
+        "import '.ckeletin/Justfile'\n\ncheck:\n    echo 'FAILED failing_gate_marker'\n    exit 1\n",
+    )
+    .unwrap();
+    commit_all(&fix.consumer, "fail the project check");
+
+    let out = run_just(&fix.consumer, &["ckeletin-update"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        !out.status.success(),
+        "a failing check must stop the update\n{combined}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "check_failed", "{result}");
+    assert_eq!(result["committed"], false, "{result}");
+    assert_eq!(result["rolled_back"], false, "{result}");
+    assert_eq!(result["from"], "1.0.0", "{result}");
+    assert_eq!(result["to"], "2.0.0", "{result}");
+    let reason = result["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("failing_gate_marker"),
+        "reason must include the failing gate output\n{result}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fix.consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "2.0.0"
+    );
+    assert!(
+        !git(&fix.consumer, &["status", "--porcelain", ".ckeletin/"]).is_empty(),
+        "the applied update must stay uncommitted"
+    );
+}

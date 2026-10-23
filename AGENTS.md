@@ -5,7 +5,7 @@
 **ckeletin-rust** is a Rust CLI scaffold implementing the [ckeletin spec](https://github.com/peiman/ckeletin) (spec version tracked in CONFORMANCE.md / `conformance-mapping.toml`, not hardcoded here). It enforces four-layer architecture at compile time through a Cargo workspace with separate crates.
 
 Key characteristics:
-- **Workspace with 5 members:** `crates/domain`, `crates/infrastructure`, `crates/cli`, `.ckeletin/crate` (framework runtime), `.ckeletin/conform` (conformance generator)
+- **Workspace with 6 members:** `crates/domain`, `crates/infrastructure`, `crates/cli`, `.ckeletin/crate` (framework runtime), `.ckeletin/conform` (conformance generator), `.ckeletin/catalog-clap` (clap → catalog walk)
 - **Compile-time architecture enforcement:** Crate boundaries in Cargo.toml prevent reverse dependencies. Violation tests prove it (CKSPEC-ENF-006)
 - **Three-stream output:** stdout (data), stderr (status), log file (audit)
 - **JSON mode:** `--output json` flag for machine-readable output on every command
@@ -19,6 +19,7 @@ Key characteristics:
 ```
 .ckeletin/              # VENDORED FRAMEWORK — see section below
 ├── crate/src/          # Framework runtime modules (config, logging, output, …)
+├── catalog-clap/       # Clap walk that fills ckeletin::catalog. Not the runtime crate.
 ├── conform/            # Conformance generator binary
 ├── scripts/            # init.sh and other framework scripts
 ├── Justfile            # Framework recipes (ckeletin-*)
@@ -38,13 +39,13 @@ crates/
         ├── root.rs     # clap derive: Cli struct, Commands enum, OutputFormat
         ├── ping.rs     # Handler: calls domain, renders via infrastructure
         ├── version.rs  # Handler: consumes ckeletin::build_info::BuildInfo framework primitive
-        └── catalog.rs  # Handler: walks clap command tree → CKSPEC-AGENT-006 catalog
+        └── catalog.rs  # Handler: calls .ckeletin/catalog-clap on the clap tree
 ```
 
 **Dependency direction (compile-time enforced):**
 - `domain` → serde only. Cannot import clap, figment, tracing, infrastructure.
 - `infrastructure` → re-exports `.ckeletin/crate` (`ckeletin`). Cannot import domain or cli.
-- `cli` → Imports both domain and infrastructure. Only crate with clap.
+- `cli` → Imports both domain and infrastructure, and calls `.ckeletin/catalog-clap`. The framework runtime crate does not depend on clap.
 
 **Violation tests:** `crates/domain/tests/architecture_violations.rs` and `crates/infrastructure/tests/architecture_violations.rs` use `trybuild` to verify that violating a boundary produces a compile error.
 
@@ -60,7 +61,7 @@ crates/
 | `just ckeletin-version` | Print framework version string |
 | `just ckeletin-doctor [json]` | Report dev environment: framework version, toolchain, and tool presence. Pass `json` (positional) for machine-readable output: `just ckeletin-doctor json` |
 | `just ckeletin-check-update [json]` | Same comparison, on demand. Pass `json` for `{"current","latest","update_available"}`. JSON does not include the note. Text mode prints `.ckeletin/UPDATE_NOTE` from upstream when an update is available. An update is a newer semver, not a string difference: `just ckeletin-check-update json` |
-| `just ckeletin-update [<branch\|tag>] [true] [false]` | Wholesale-replace `.ckeletin/` from upstream. Stops when `.ckeletin/` has uncommitted changes or a committed local difference (`CKELETIN_UPDATE_RESULT` `status` `stopped`, `reason` `uncommitted`, `local_difference`, or `unknown_version`). The second argument `true` (`discard_local`) discards only a committed difference and sets `discarded` true. `just ckeletin-update discard_local=true` is the same request and follows upstream `main`. `commit=false` applies the tree, prints `CKELETIN_UPDATE_RESULT` with `"committed":false`, and does not commit. Then two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). An existing `Cargo.lock` is refreshed with `cargo update -p ckeletin`. Result fields: `status`, `from`, `to`, `committed`, `rolled_back`, `reason`, `discarded`. Example: `just ckeletin-update v0.3.0` |
+| `just ckeletin-update [<branch\|tag>] [true] [false]` | Wholesale-replace `.ckeletin/` from upstream. Stops when `.ckeletin/` has uncommitted changes or a committed local difference (`CKELETIN_UPDATE_RESULT` `status` `stopped`, `reason` `uncommitted`, `local_difference`, or `unknown_version`). The second argument `true` (`discard_local`) discards only a committed difference and sets `discarded` true. `just ckeletin-update discard_local=true` is the same request and follows upstream `main`. `commit=false` applies the tree, prints `CKELETIN_UPDATE_RESULT` with `"committed":false`, and does not commit. Then two-tier validation: compile check (tier 1, rolls back on failure), then `just check` (tier 2, leaves tree dirty on failure so you can fix forward). A tier-2 failure sets `status` to `check_failed` and puts the last lines of that gate in `reason`. The fetch updates `ckeletin-upstream/main` only, unless you named another ref. An existing `Cargo.lock` is refreshed with `cargo update -p ckeletin`. Result fields: `status`, `from`, `to`, `committed`, `rolled_back`, `reason`, `discarded`. Example: `just ckeletin-update v0.3.0` |
 | `just ckeletin-update-dry-run [<branch\|tag>]` | Preview what would change without applying. Prints a local framework difference when one exists and still changes nothing. Example: `just ckeletin-update-dry-run v0.3.0` |
 | `just ckeletin-update-check-compatibility [<branch\|tag>]` | Apply the update, run `just check`, then restore the previous framework and `Cargo.lock` (interrupt-safe trap). No changes kept. Exits 1 without modifying `.ckeletin/` when the tree is uncommitted or locally different. `from` is the committed framework version. Example: `just ckeletin-update-check-compatibility v0.3.0` |
 | `just conform [ARGS]` | Run conformance generator against the vendored spec snapshot (hermetic, no network). Upstream-only — no-ops in consumer repos |
@@ -145,7 +146,7 @@ feedback, 2026-06-10 — agent-chat and ioguard both ship this shape.)
 
 **`just check` is the single gateway.** It runs fmt, clippy, test, deny, health, and the health-lock regression — the same checks in CI and locally (SSOT). Run it before every commit.
 
-**Per commit.** `git rebase --exec 'just check'` runs the full gate on every commit you rewrite. CI does not repeat that cost: a pull request runs fmt, clippy, `cargo check --workspace --all-targets`, and `cargo deny` on each commit, and the full `just check` on the tip.
+**Per commit.** `git rebase --exec 'just check'` runs the full gate on every commit you rewrite. CI does not repeat that cost: a pull request runs fmt, clippy, `cargo check --workspace --all-targets`, and `just ckeletin-deny-history` (licenses, bans, sources) on each commit. Advisories are checked on the pull request tip by `just check`, not on each historical commit.
 
 **`catalog` subcommand (CKSPEC-AGENT-006):** `cargo run -p cli -- catalog` emits a machine-readable JSON catalog of all commands and flags, derived directly from the live clap command tree. Because the catalog and the parser share one tree, the catalog cannot drift from the actual command set.
 
@@ -339,6 +340,7 @@ speculatively in a single-plugin CLI.
 |---------|-----|
 | `just check` fails on fmt | `just fmt` then retry |
 | `just ckeletin-update` stops and the only uncommitted path is `.ckeletin/cache/` | That directory is a retired update-check stamp from framework 0.2.30. `rm -rf .ckeletin/cache`, then `just ckeletin-update` again. From 0.2.31 the update ignores it |
+| An update from framework 0.2.30 re-resolved the whole `Cargo.lock` | `git checkout HEAD -- Cargo.lock`, then `cargo update -p ckeletin`. The 0.2.30 command cannot print this |
 | Clippy pedantic warning | Fix it or add targeted `#[allow]` with justification |
 | Violation test fails after adding dependency | You probably added a framework dep to domain — remove it |
 | `cargo deny check` fails (advisory) | See "Advisory DB floats by design" below |

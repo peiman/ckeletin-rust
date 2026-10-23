@@ -51,6 +51,13 @@ just ckeletin-update
 
 From framework 0.2.31 on, the update ignores that directory. `just check` prints `.ckeletin/UPDATE_NOTE` from upstream when a newer framework version is available. That note is the step to take before you update.
 
+The 0.2.30 update also re-resolves the whole `Cargo.lock`. That command cannot print the fix. After it finishes, restore the lock and refresh only the framework crate:
+
+```bash
+git checkout HEAD -- Cargo.lock
+cargo update -p ckeletin
+```
+
 ```bash
 # Run the scaffold commands
 cargo run -p cli -- ping

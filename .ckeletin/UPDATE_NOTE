@@ -2,3 +2,8 @@ If `just ckeletin-update` stops and the uncommitted path is `.ckeletin/cache/`, 
 
 rm -rf .ckeletin/cache
 just ckeletin-update
+
+If you updated from framework 0.2.30, that command re-resolved the whole Cargo.lock. The 0.2.30 command cannot print this note. After that update, restore the lock and refresh only the framework crate:
+
+git checkout HEAD -- Cargo.lock
+cargo update -p ckeletin

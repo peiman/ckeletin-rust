@@ -477,7 +477,8 @@ jobs:
             just ckeletin-fmt-check
             just ckeletin-clippy
             cargo check --workspace --all-targets
-            just ckeletin-deny
+            just ckeletin-deny-history
+            echo "Advisories are checked on the pull request tip by the Check job, not on each historical commit."
           done
 
       - name: Remove job temp folder
