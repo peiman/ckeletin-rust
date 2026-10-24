@@ -144,7 +144,7 @@ fn make_upstream(upstream_bare: &Path, version: &str) {
     std::fs::write(crate_dir.join("lib.rs"), "// framework\n").unwrap();
     std::fs::write(ck.join("VERSION"), version).unwrap();
     std::fs::write(ck.join("sentinel.txt"), "upstream").unwrap();
-    // Same Justfile and local-diff script the consumer will run. `ckeletin-update`
+    // Same Justfile and update scripts the consumer will run. `ckeletin-update`
     // applies no name rewrite, so a clean derived tree must match this commit
     // byte for byte or the update stops.
     copy_framework_update_files(&ck);
@@ -583,7 +583,7 @@ fn update_with_explicit_tag_works() {
 
 // ── helper: install the real ckeletin Justfile into a consumer ────────────────
 
-/// Copy the real update recipe and the local-diff script into `.ckeletin/`.
+/// Copy the real update recipe and the scripts it runs into `.ckeletin/`.
 ///
 /// Both the upstream baseline and the consumer must get these bytes. The update
 /// command does not rewrite names, so a file that exists on only one side is a
@@ -595,7 +595,11 @@ fn copy_framework_update_files(ck: &Path) {
         .unwrap_or_else(|e| panic!("copy {}: {e}", justfile.display()));
     let scripts = ck.join("scripts");
     std::fs::create_dir_all(&scripts).unwrap();
-    for name in ["framework-local-diff.sh", "framework-lock.sh"] {
+    for name in [
+        "framework-local-diff.sh",
+        "framework-lock.sh",
+        "report-hook-drift.sh",
+    ] {
         let script = root.join(".ckeletin/scripts").join(name);
         std::fs::copy(&script, scripts.join(name))
             .unwrap_or_else(|e| panic!("copy {}: {e}", script.display()));

@@ -15,7 +15,7 @@ pre-commit:
       # Staged-only secret scan (fast). Skips cleanly when gitleaks is not
       # installed (so it never blocks contributors without it — CI is the hard
       # gate) but FAILS when an actual secret is staged. Install: brew install gitleaks
-      run: if command -v gitleaks >/dev/null 2>&1; then gitleaks git --pre-commit --staged --redact --no-banner --config .ckeletin/configs/gitleaks.toml; else echo "gitleaks not installed — skipping (CI gates this)"; fi
+      run: if command -v gitleaks >/dev/null 2>&1; then gitleaks git --pre-commit --staged --redact --no-banner --config "$(bash .ckeletin/scripts/gitleaks-config.sh)"; else echo "gitleaks not installed — skipping (CI gates this)"; fi
       fail_text: "Secret detected in staged changes. Remove it or allowlist via #gitleaks:allow."
 
 commit-msg:

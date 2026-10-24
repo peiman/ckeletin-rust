@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-10-24
+
+### Fixed
+
+- **The test launcher resolves `/tmp` before creating its directory.** On macOS
+  `/tmp` is a symlink. The short temp folder is created on the real path.
+- **The health-lock timeout can be longer than 180 seconds.** Set
+  `CKELETIN_HEALTH_LOCK_TIMEOUT` to a whole number of seconds. A missing or
+  unusable value keeps 180.
+- **A root `.gitleaks.toml` is the scan config when it exists.**
+  `just ckeletin-secrets` uses it. The framework file stays the default.
+  `gitleaks git` fingerprints are `commit:file:rule:line`. `gitleaks dir`
+  fingerprints are `file:rule:line`. One `.gitleaksignore` line does not cover
+  both. A finding already in history stays a failure until that commit's
+  fingerprint is ignored, or the history is rewritten.
+- **`just ckeletin-update` reports a lefthook.yml with no gitleaks command.**
+  The update does not edit that file. The dry run and the compatibility check
+  print the same line. Merge the command from the ckeletin-rust `lefthook.yml`.
+- **The project file can select the older JSON envelope.** `[output] envelope
+  = "prose"` writes `error` as a string and omits nulls. The default stays
+  `total`: every key present, nulls included, `error` as `{code, message}`
+  (CKSPEC-OUT-003). `Output::from_project_dir` reads the table. `Output::new`
+  stays on the total envelope. `prose` is outside that schema.
+- **The CI temp prefix is the project's.** `.github/CI_TEMP_PREFIX` names the
+  folder prefix. This repo uses `ckeletin-rust`, so the template is
+  `/tmp/ckeletin-rust-ci.XXXXXXXX` and the stale sweep is
+  `ckeletin-rust-*`. A shared `ck-*` sweep is no longer accepted. On the next
+  update, add that file and point `CKELETIN_CI_TEMP` and the sweep at it.
+  The prefix has to leave room for a socket path: the template plus 71 bytes
+  must fit in 104.
+- **CI shape accepts the same GitHub forms.** Cleanup may say `if: always()`
+  or `if: ${{ always() }}`. A `just@` action pin is accepted when it matches
+  `.github/JUST_VERSION`. `cargo install just` still has to read that file.
+- **The per-commit checks do not require the job name `per-commit`.** The job
+  is expensive on a large workspace. Do not put it in a `required-gates`
+  `needs` list: it is skipped on push to main, and a skipped need fails
+  `success`. Advisories stay on the tip via `just ckeletin-deny`.
+- **Secret scan has a gate job.** `secret-scan-gate` runs on every event that
+  can merge and accepts only a successful scan. A schedule does not merge.
+  The scan stays out of `just check`. Branch protection has to require this
+  check by name. A workflow cannot set that protection itself. The gitleaks
+  install matches the runner architecture, checks
+  `.github/gitleaks_8.30.1.sha256`, and extracts into the job temp folder.
+  It does not use sudo.
+
 ## [0.2.33] - 2026-10-23
 
 ### Fixed

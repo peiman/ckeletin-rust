@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.34.** The test temp folder resolves `/tmp`. The health-lock
+  timeout reads `CKELETIN_HEALTH_LOCK_TIMEOUT`. A root `.gitleaks.toml` is the
+  scan config when it exists, and git and dir scans need both ignore
+  fingerprints. The update says when `lefthook.yml` has no gitleaks command.
+  `[output] envelope = "prose"` writes the older JSON shape. The default
+  stays the total envelope. CI uses a project temp prefix, accepts both
+  `always()` forms and an action-pinned just, and does not require the job
+  name `per-commit`. `secret-scan-gate` is the check to require. The gitleaks
+  install is checksummed and does not use sudo. The notice still stays silent
+  when `CI` is set (CKSPEC-UPD-001).
 - **Framework 0.2.33.** Per-commit CI checks licenses, bans, and sources.
   Advisories stay on the tip. A dry run fetches one ref. A failed `just check`
   after an update puts the gate output in `CKELETIN_UPDATE_RESULT` `reason`.

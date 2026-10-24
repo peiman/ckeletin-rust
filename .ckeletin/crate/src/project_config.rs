@@ -57,6 +57,30 @@ pub struct ProjectConfig {
     /// Violation test configuration.
     #[serde(default)]
     pub violation_tests: ViolationTestsConfig,
+
+    /// JSON envelope selection. Missing means the total schema.
+    #[serde(default)]
+    pub output: OutputConfig,
+}
+
+/// How a consumer wants the JSON envelope written.
+///
+/// `total` is the default and matches CKSPEC-OUT-003. `prose` writes `error`
+/// as a string and omits null keys. That shape is outside the total schema.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvelopeKind {
+    #[default]
+    Total,
+    Prose,
+}
+
+/// `[output]` in `ckeletin-project.toml`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct OutputConfig {
+    /// `total` or `prose`.
+    #[serde(default)]
+    pub envelope: EnvelopeKind,
 }
 
 /// Layer crate paths.
@@ -238,6 +262,7 @@ pub fn scaffold_defaults() -> ProjectConfig {
         },
         allowlists: AllowlistsConfig::default(),
         violation_tests: ViolationTestsConfig::default(),
+        output: OutputConfig::default(),
     }
 }
 
@@ -419,6 +444,20 @@ cli = ["chat-cli"]
         assert_eq!(config.layers.domain, vec!["chat-core"]);
         assert_eq!(config.layers.infrastructure, vec!["chat-infra"]);
         assert_eq!(config.layers.cli, vec!["chat-cli"]);
+        assert_eq!(config.output.envelope, EnvelopeKind::Total);
+    }
+
+    #[test]
+    fn load_prose_envelope_from_the_project_file() {
+        let ws = make_workspace(&[("ckeletin-project.toml", "[output]\nenvelope = \"prose\"\n")]);
+        let outcome = load(ws.path()).unwrap();
+        assert_eq!(outcome.config().output.envelope, EnvelopeKind::Prose);
+    }
+
+    #[test]
+    fn load_rejects_an_unknown_envelope_name() {
+        let ws = make_workspace(&[("ckeletin-project.toml", "[output]\nenvelope = \"flat\"\n")]);
+        assert!(load(ws.path()).is_err());
     }
 
     // ── scaffold_defaults tests ───────────────────────────────────────────────

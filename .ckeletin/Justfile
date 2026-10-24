@@ -178,7 +178,7 @@ ckeletin-secrets:
         echo "Error: gitleaks not found. Install: brew install gitleaks (https://github.com/gitleaks/gitleaks)"
         exit 1
     fi
-    gitleaks dir --config .ckeletin/configs/gitleaks.toml --redact --verbose
+    gitleaks dir --config "$(bash .ckeletin/scripts/gitleaks-config.sh)" --redact --verbose
 
 # Generate a CycloneDX SBOM (sbom.cdx.json) for the CLI binary's dependency
 # graph, using cargo-cyclonedx (the official OWASP CycloneDX cargo plugin).
@@ -323,6 +323,7 @@ ckeletin-update version="main" discard_local="false" commit="true":
     if [ "$REQ_COMMIT" != "false" ]; then
         REQ_COMMIT=true
     fi
+    bash .ckeletin/scripts/report-hook-drift.sh
     MARK=$(mktemp)
     cleanup_mark() { rm -f "$MARK"; }
     trap cleanup_mark EXIT
@@ -419,6 +420,7 @@ ckeletin-update version="main" discard_local="false" commit="true":
 ckeletin-update-dry-run version="main":
     #!/usr/bin/env bash
     set -euo pipefail
+    bash .ckeletin/scripts/report-hook-drift.sh
     MARK=$(mktemp)
     cleanup_mark() { rm -f "$MARK"; }
     trap cleanup_mark EXIT
@@ -461,6 +463,7 @@ ckeletin-update-dry-run version="main":
 ckeletin-update-check-compatibility version="main":
     #!/usr/bin/env bash
     set -euo pipefail
+    bash .ckeletin/scripts/report-hook-drift.sh
     MARK=$(mktemp)
     cleanup_mark() { rm -f "$MARK"; }
     trap cleanup_mark EXIT

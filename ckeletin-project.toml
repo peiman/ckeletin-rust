@@ -18,6 +18,14 @@
 #
 # [defaults]
 # log_level = "warn"
+#
+# JSON envelope. `total` (the default) always writes status, command, data,
+# and error. `error` is {code, message} and an absent value is JSON null.
+# `prose` writes error as a string and omits nulls. That shape is outside
+# CKSPEC-OUT-003. Leave this unset to keep the total envelope.
+#
+# [output]
+# envelope = "total"
 
 # ── Layer crate paths ─────────────────────────────────────────────────────────
 #
