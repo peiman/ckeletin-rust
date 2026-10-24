@@ -21,7 +21,7 @@ permissions:
   issues: write
 
 env:
-  CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX
+  CKELETIN_CI_TEMP: /tmp/ckeletin-rust-ci.XXXXXXXX
 
 jobs:
   spec-drift:
@@ -37,7 +37,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do

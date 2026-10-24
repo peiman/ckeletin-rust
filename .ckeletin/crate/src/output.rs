@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use std::path::Path;
 
 /// Output status in the JSON envelope (CKSPEC-OUT-003).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -69,17 +70,99 @@ pub enum OutputMode {
     Json,
 }
 
+/// Which JSON envelope to write.
+///
+/// `Total` is CKSPEC-OUT-003: every key is present and an absent value is
+/// JSON null. `error` is `{code, message}`. `Prose` is the older consumer
+/// shape: `error` is a string and null keys are omitted. It is opt-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnvelopeStyle {
+    #[default]
+    Total,
+    Prose,
+}
+
+#[derive(Serialize)]
+struct ProseEnvelope<'a> {
+    status: &'a Status,
+    command: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<&'a serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'a str>,
+}
+
 /// Renders command output to the appropriate streams.
 ///
 /// Business logic MUST NOT write to stdout/stderr directly (CKSPEC-OUT-005).
 /// All output goes through this struct. Writer injection for testability.
 pub struct Output {
     mode: OutputMode,
+    style: EnvelopeStyle,
 }
 
 impl Output {
     pub fn new(mode: OutputMode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            style: EnvelopeStyle::Total,
+        }
+    }
+
+    /// Render with an explicit envelope. `Output::new` stays on the total schema.
+    pub fn with_style(mode: OutputMode, style: EnvelopeStyle) -> Self {
+        Self { mode, style }
+    }
+
+    /// Read `[output] envelope` from `ckeletin-project.toml` in `dir`.
+    ///
+    /// A missing file or a missing table keeps the total envelope. A file that
+    /// does not parse is an error, so a typo does not silently change shape.
+    pub fn from_project_dir(mode: OutputMode, dir: &Path) -> Result<Self, String> {
+        let style = match crate::project_config::load(dir) {
+            Ok(outcome) if outcome.should_skip() => EnvelopeStyle::Total,
+            Ok(outcome) => match outcome.config().output.envelope {
+                crate::project_config::EnvelopeKind::Total => EnvelopeStyle::Total,
+                crate::project_config::EnvelopeKind::Prose => EnvelopeStyle::Prose,
+            },
+            Err(err) => return Err(err.to_string()),
+        };
+        Ok(Self::with_style(mode, style))
+    }
+
+    fn write_json(
+        &self,
+        out: &mut dyn Write,
+        status: &Status,
+        command: &str,
+        data: Option<&serde_json::Value>,
+        error_message: Option<&str>,
+    ) -> io::Result<()> {
+        match self.style {
+            EnvelopeStyle::Total => {
+                let envelope = Envelope {
+                    status: status.clone(),
+                    command: command.to_string(),
+                    data: data.cloned(),
+                    error: error_message.map(|message| EnvelopeError {
+                        code: None,
+                        message: message.to_string(),
+                    }),
+                };
+                serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
+            }
+            EnvelopeStyle::Prose => {
+                let prose = ProseEnvelope {
+                    status,
+                    command,
+                    data,
+                    error: error_message,
+                };
+                serde_json::to_writer_pretty(&mut *out, &prose).map_err(io::Error::other)?;
+            }
+        }
+        writeln!(out)?;
+        Ok(())
     }
 
     /// Render success output to the provided writer.
@@ -102,8 +185,7 @@ impl Output {
             OutputMode::Human => writeln!(out, "{data}")?,
             OutputMode::Json => {
                 let envelope = Envelope::success(command, data).map_err(io::Error::other)?;
-                serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
-                writeln!(out)?;
+                self.write_json(out, &envelope.status, command, envelope.data.as_ref(), None)?;
             }
         }
         // Shadow log AFTER the successful write: the audit stream records what
@@ -130,14 +212,8 @@ impl Output {
         match self.mode {
             OutputMode::Human => writeln!(out, "{msg}")?,
             OutputMode::Json => {
-                let envelope = Envelope {
-                    status: Status::Success,
-                    command: command.to_string(),
-                    data: Some(serde_json::json!({ "message": msg })),
-                    error: None,
-                };
-                serde_json::to_writer_pretty(&mut *out, &envelope).map_err(io::Error::other)?;
-                writeln!(out)?;
+                let data = serde_json::json!({ "message": msg });
+                self.write_json(out, &Status::Success, command, Some(&data), None)?;
             }
         }
         // Shadow log AFTER the successful write (CKSPEC-OUT-004, Principle 1).
@@ -160,9 +236,7 @@ impl Output {
         match self.mode {
             OutputMode::Human => writeln!(stderr, "Error: {err_msg}")?,
             OutputMode::Json => {
-                let envelope = Envelope::error(command, err_msg);
-                serde_json::to_writer_pretty(&mut *stdout, &envelope).map_err(io::Error::other)?;
-                writeln!(stdout)?;
+                self.write_json(stdout, &Status::Error, command, None, Some(err_msg))?;
             }
         }
         // Shadow log AFTER the successful write (CKSPEC-OUT-004, Principle 1).
@@ -549,5 +623,82 @@ mod tests {
             !logged.contains("output.message"),
             "output.message must NOT be shadow-logged when the write fails, got: {logged}"
         );
+    }
+
+    #[test]
+    fn prose_success_omits_null_error_and_keeps_status_first() {
+        let output = Output::with_style(OutputMode::Json, EnvelopeStyle::Prose);
+        let mut buf = Vec::new();
+        output.success("ping", &"pong", &mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(value.get("error").is_none(), "{text}");
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["command"], "ping");
+        assert_eq!(value["data"], "pong");
+        assert!(text.find("\"status\"").unwrap() < text.find("\"command\"").unwrap());
+    }
+
+    #[test]
+    fn prose_error_is_a_string_and_omits_null_data() {
+        let output = Output::with_style(OutputMode::Json, EnvelopeStyle::Prose);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        output
+            .error("ping", "connection failed", &mut stdout, &mut stderr)
+            .unwrap();
+        let text = String::from_utf8(stdout).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(value.get("data").is_none(), "{text}");
+        assert_eq!(value["error"], "connection failed");
+        assert_eq!(value["status"], "error");
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn project_file_selects_the_prose_envelope() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("ckeletin-project.toml"),
+            "[output]\nenvelope = \"prose\"\n",
+        )
+        .unwrap();
+        let output = Output::from_project_dir(OutputMode::Json, dir.path()).unwrap();
+        let mut buf = Vec::new();
+        output
+            .error("ping", "nope", &mut buf, &mut Vec::new())
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(value["error"], "nope");
+        assert!(value.get("data").is_none());
+    }
+
+    #[test]
+    fn missing_project_file_keeps_the_total_envelope() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = Output::from_project_dir(OutputMode::Json, dir.path()).unwrap();
+        let mut buf = Vec::new();
+        output
+            .error("ping", "nope", &mut buf, &mut Vec::new())
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert!(value["data"].is_null());
+        assert!(value["error"]["code"].is_null());
+        assert_eq!(value["error"]["message"], "nope");
+    }
+
+    #[test]
+    fn unknown_envelope_name_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("ckeletin-project.toml"),
+            "[output]\nenvelope = \"stringy\"\n",
+        )
+        .unwrap();
+        let err = match Output::from_project_dir(OutputMode::Json, dir.path()) {
+            Err(err) => err,
+            Ok(_) => panic!("an unknown envelope name must fail"),
+        };
+        assert!(err.contains("ckeletin-project.toml"), "{err}");
     }
 }

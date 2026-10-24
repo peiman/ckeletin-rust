@@ -40,7 +40,10 @@ def _short_directory():
     private folder in the caller's own temp directory instead.
     """
     try:
-        path = tempfile.mkdtemp(prefix="s-", dir="/tmp")
+        # /tmp is a symlink on macOS. A no-follow open or a path comparison
+        # then sees the link, not the directory. Create the folder on the
+        # resolved path.
+        path = tempfile.mkdtemp(prefix="s-", dir=os.path.realpath("/tmp"))
     except OSError as error:
         sys.stderr.write(
             "The temporary folder is too long for a Unix socket, and a "

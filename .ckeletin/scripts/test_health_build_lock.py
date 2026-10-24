@@ -16,7 +16,26 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-TIMEOUT_SECONDS = 180
+
+
+def timeout_seconds():
+    """How long the nested health build may run.
+
+    A cold workspace check on a large consumer can pass 180 seconds. Set
+    CKELETIN_HEALTH_LOCK_TIMEOUT to a whole number of seconds. A missing or
+    unusable value keeps the 180 second default.
+    """
+    raw = os.environ.get("CKELETIN_HEALTH_LOCK_TIMEOUT", "180")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 180
+    if value <= 0:
+        return 180
+    return value
+
+
+TIMEOUT_SECONDS = timeout_seconds()
 
 
 def main():

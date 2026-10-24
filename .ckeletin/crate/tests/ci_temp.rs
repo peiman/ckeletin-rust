@@ -7,8 +7,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const TEMPLATE: &str = "/tmp/ck-ci.XXXXXXXX";
-
 fn workspace_root() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     Path::new(manifest_dir)
@@ -121,7 +119,33 @@ fn run_body(step: &str) -> String {
     body
 }
 
+fn ci_prefix() -> String {
+    let path = workspace_root().join(".github/CI_TEMP_PREFIX");
+    let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "read {}: {err}. Set the CI temp prefix in that file. The next framework update requires it, because a shared ck- sweep deletes another project's folders.",
+            path.display()
+        )
+    });
+    let prefix = raw.trim();
+    assert!(
+        !prefix.is_empty()
+            && !prefix.starts_with('-')
+            && !prefix.ends_with('-')
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+        ".github/CI_TEMP_PREFIX must be a short lowercase token, got {prefix:?}"
+    );
+    prefix.to_string()
+}
+
+fn ci_template() -> String {
+    format!("/tmp/{}-ci.XXXXXXXX", ci_prefix())
+}
+
 fn assert_no_stray_tmp(path: &Path) {
+    let marker = format!("CKELETIN_CI_TEMP: {}", ci_template());
     let text = fs::read_to_string(path).unwrap();
     for (number, line) in text.lines().enumerate() {
         let code = line.split('#').next().unwrap();
@@ -129,7 +153,7 @@ fn assert_no_stray_tmp(path: &Path) {
             continue;
         }
         assert!(
-            code.contains("CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX"),
+            code.contains(&marker),
             "{}:{} has a /tmp path outside the job-root template:\n{line}",
             path.display(),
             number + 1
@@ -139,17 +163,40 @@ fn assert_no_stray_tmp(path: &Path) {
 
 #[test]
 fn ci_template_leaves_socket_room() {
-    assert!(TEMPLATE.starts_with("/tmp/ck-"));
-    assert!(TEMPLATE.ends_with(".XXXXXXXX"));
+    let template = ci_template();
+    let prefix = ci_prefix();
+    assert!(template.starts_with("/tmp/"));
+    assert!(template.ends_with(".XXXXXXXX"));
+    assert!(template.contains(&format!("/{prefix}-ci.")));
     // mktemp keeps this length. The launcher adds `/t-` plus 8 characters,
     // and a fixture may append 60 bytes. Unix socket paths stop at 104.
-    assert!(TEMPLATE.len() + "/t-".len() + 8 + 60 <= 104);
+    assert!(
+        template.len() + "/t-".len() + 8 + 60 <= 104,
+        "prefix {prefix} leaves no room for a socket path"
+    );
+}
+
+fn just_action_pins(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find("just@") {
+        rest = &rest[index + "just@".len()..];
+        let version: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if !version.is_empty() {
+            found.push(version);
+        }
+    }
+    found
 }
 
 #[test]
 fn just_pin_is_one_file() {
     let pin = fs::read_to_string(workspace_root().join(".github/JUST_VERSION")).unwrap();
     assert_eq!(pin, "1.52.0\n");
+    let version = pin.trim();
     for path in workflows() {
         let text = fs::read_to_string(&path).unwrap();
         if text.contains("cargo install just") {
@@ -164,7 +211,22 @@ fn just_pin_is_one_file() {
                 path.display()
             );
         }
+        for pinned in just_action_pins(&text) {
+            assert_eq!(
+                pinned,
+                version,
+                "{} pins just@{pinned}; JUST_VERSION is {version}",
+                path.display()
+            );
+        }
     }
+}
+
+fn cleanup_runs_when_the_job_fails(step: &str) -> bool {
+    step.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("if:") && trimmed.contains("always()")
+    })
 }
 
 #[test]
@@ -173,11 +235,12 @@ fn every_job_prepares_and_removes_its_temp_root() {
     let mut prepare = None;
     let mut cleanup = None;
     let mut saw_secret_scan = false;
-    let mut saw_per_commit = false;
+    let mut saw_secret_gate = false;
+    let mut slice_names = Vec::new();
     for path in workflows() {
         let text = fs::read_to_string(&path).unwrap();
         assert!(
-            text.contains("CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX"),
+            text.contains(&format!("CKELETIN_CI_TEMP: {}", ci_template())),
             "{} is missing the job-root template",
             path.display()
         );
@@ -205,7 +268,7 @@ fn every_job_prepares_and_removes_its_temp_root() {
                 job.name
             );
             assert!(
-                last.contains("if: always()"),
+                cleanup_runs_when_the_job_fails(last),
                 "{} job {} cleanup must run when the job fails",
                 path.display(),
                 job.name
@@ -223,15 +286,24 @@ fn every_job_prepares_and_removes_its_temp_root() {
             if job.name == "secret-scan" {
                 saw_secret_scan = job.body.contains("fetch-depth: 0");
             }
-            if job.name == "per-commit" {
-                saw_per_commit = job.body.contains("fetch-depth: 0")
-                    && job.body.contains("just ckeletin-fmt-check")
-                    && job.body.contains("just ckeletin-clippy")
-                    && job.body.contains("cargo check --workspace --all-targets")
-                    && job.body.contains("just ckeletin-deny-history")
-                    && job.body.contains("not on each historical commit")
-                    && !job.body.contains("just ckeletin-deny\n")
-                    && job.body.contains("github.event_name == 'pull_request'");
+            if job.body.contains("needs.secret-scan.result")
+                && job.body.contains("!= \"success\"")
+                && job.body.contains("needs:")
+            {
+                saw_secret_gate = true;
+            }
+            let is_slice = job.body.contains("fetch-depth: 0")
+                && job.body.contains("just ckeletin-fmt-check")
+                && job.body.contains("just ckeletin-clippy")
+                && job.body.contains("cargo check --workspace --all-targets")
+                && job.body.contains("just ckeletin-deny-history")
+                && job.body.contains("not on each historical commit")
+                && !job.body.contains("just ckeletin-deny\n")
+                && job.body.contains("github.event_name == 'pull_request'")
+                && job.body.contains("required-gates")
+                && job.body.contains("skipped on push");
+            if is_slice {
+                slice_names.push(job.name.clone());
             }
             count += 1;
         }
@@ -241,12 +313,39 @@ fn every_job_prepares_and_removes_its_temp_root() {
         saw_secret_scan,
         "secret-scan must keep its full-history checkout"
     );
-    assert!(saw_per_commit, "per-commit slice is missing its checks");
+    assert!(
+        saw_secret_gate,
+        "a gate must wait for secret-scan and accept only success"
+    );
+    assert!(
+        !slice_names.is_empty(),
+        "a per-commit slice is missing its checks"
+    );
+    for path in workflows() {
+        let text = fs::read_to_string(&path).unwrap();
+        for job in jobs(&text) {
+            for line in job.body.lines() {
+                let trimmed = line.trim();
+                if !trimmed.starts_with("needs:") {
+                    continue;
+                }
+                for name in &slice_names {
+                    assert!(
+                        !trimmed.contains(name.as_str()),
+                        "{} job {} needs the per-commit slice {name}. That job is skipped on push to main, so a required-gates needs entry fails success.",
+                        path.display(),
+                        job.name
+                    );
+                }
+            }
+        }
+    }
 
     let prepare = prepare.unwrap();
+    let prefix = ci_prefix();
     assert!(prepare.contains("-maxdepth 1"));
     assert!(prepare.contains("-type d"));
-    assert!(prepare.contains("-name 'ck-*'"));
+    assert!(prepare.contains(&format!("-name '{prefix}-*'")));
     assert!(prepare.contains("-user"));
     assert!(prepare.contains("-mmin +360"));
     assert!(prepare.contains("-exec rm -rf --"));
@@ -259,11 +358,12 @@ fn every_job_prepares_and_removes_its_temp_root() {
 
 fn execute_prepare_and_cleanup(prepare: &str) {
     let fixture = tempfile::tempdir().unwrap();
-    let old = fixture.path().join("ck-abandoned");
-    let recent = fixture.path().join("ck-recent");
+    let prefix = ci_prefix();
+    let old = fixture.path().join(format!("{prefix}-abandoned"));
+    let recent = fixture.path().join(format!("{prefix}-recent"));
     let target = fixture.path().join("keep-target");
-    let link = fixture.path().join("ck-link");
-    let file = fixture.path().join("ck-not-a-dir");
+    let link = fixture.path().join(format!("{prefix}-link"));
+    let file = fixture.path().join(format!("{prefix}-not-a-dir"));
     fs::create_dir(&old).unwrap();
     fs::create_dir(&recent).unwrap();
     fs::create_dir(&target).unwrap();
@@ -287,7 +387,7 @@ fn execute_prepare_and_cleanup(prepare: &str) {
     );
     assert!(created.is_dir(), "mktemp did not create the job root");
 
-    let other_old = fixture.path().join("ck-other-user");
+    let other_old = fixture.path().join(format!("{prefix}-other-user"));
     fs::create_dir(&other_old).unwrap();
     let other_touch = Command::new("touch")
         .args(["-t", "202001010000"])
@@ -345,7 +445,7 @@ fn run_prepare(fixture: &Path, prepare: &str, prelude: &str) -> PathBuf {
         "github-env-other"
     });
     fs::write(&script, format!("{prelude}{prepare}")).unwrap();
-    let template = fixture.join("ck-ci.XXXXXXXX");
+    let template = fixture.join(format!("{}-ci.XXXXXXXX", ci_prefix()));
     let output = Command::new("bash")
         .arg(&script)
         .env("CKELETIN_CI_TEMP", &template)

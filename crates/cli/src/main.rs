@@ -16,6 +16,23 @@ fn main() {
     std::process::exit(run());
 }
 
+/// JSON shape comes from `[output] envelope` in ckeletin-project.toml.
+/// A missing table keeps the total envelope.
+fn make_output(json_mode: bool) -> Output {
+    let mode = if json_mode {
+        OutputMode::Json
+    } else {
+        OutputMode::Human
+    };
+    match Output::from_project_dir(mode, std::path::Path::new(".")) {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn run() -> i32 {
     // Parse CLI args first — we need to know the output format
     // before we can route errors correctly.
@@ -41,11 +58,7 @@ fn run() -> i32 {
         Err(RunError::PreConfig { error }) => {
             // Config load failed — output mode is CLI flag only (no config yet).
             let json_mode = resolve_output_mode(&explicit_output, false);
-            let output = Output::new(if json_mode {
-                OutputMode::Json
-            } else {
-                OutputMode::Human
-            });
+            let output = make_output(json_mode);
             let _ = output.error(
                 cmd_name,
                 &error.to_string(),
@@ -62,11 +75,7 @@ fn run() -> i32 {
             // config; no guard exists so the error event won't be shadow-logged
             // (inherent: the audit infrastructure itself failed to start).
             let json_mode = resolve_output_mode(&explicit_output, resolved_json_mode);
-            let output = Output::new(if json_mode {
-                OutputMode::Json
-            } else {
-                OutputMode::Human
-            });
+            let output = make_output(json_mode);
             let _ = output.error(
                 cmd_name,
                 &error.to_string(),
@@ -88,11 +97,7 @@ fn run() -> i32 {
             // is alive when Output::error emits its shadow-log event (CKSPEC-OUT-004).
             // Guard drops when this match arm's scope ends — AFTER output.error completes.
             let json_mode = resolve_output_mode(&explicit_output, resolved_json_mode);
-            let output = Output::new(if json_mode {
-                OutputMode::Json
-            } else {
-                OutputMode::Human
-            });
+            let output = make_output(json_mode);
             let _ = output.error(
                 cmd_name,
                 &error.to_string(),
@@ -260,11 +265,7 @@ fn run_inner(cli: root::Cli) -> Result<(LogGuard, ()), RunError> {
         json_mode,
     })?;
 
-    let output = Output::new(if json_mode {
-        OutputMode::Json
-    } else {
-        OutputMode::Human
-    });
+    let output = make_output(json_mode);
 
     // Dispatch to command handler. On failure, wrap the error as PostConfig so
     // the caller receives the guard alongside the error — keeping the audit

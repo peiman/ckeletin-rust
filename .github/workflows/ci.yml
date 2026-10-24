@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CKELETIN_CI_TEMP: /tmp/ck-ci.XXXXXXXX
+  CKELETIN_CI_TEMP: /tmp/ckeletin-rust-ci.XXXXXXXX
   CARGO_TERM_COLOR: always
 
 # Tool versions are PINNED, not floating: `cargo install <tool> --locked` only
@@ -55,7 +55,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -93,7 +93,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -129,7 +129,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -184,7 +184,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -232,7 +232,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -283,7 +283,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -329,7 +329,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -341,13 +341,66 @@ jobs:
           fetch-depth: 0 # full history so `gitleaks git` scans every commit
 
       - name: Install gitleaks
+        shell: bash
         run: |
+          set -euo pipefail
           VERSION=8.30.1
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin gitleaks
+          case "$(uname -m)" in
+            x86_64|amd64) arch=x64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *)
+              echo "no gitleaks build for $(uname -m)"
+              exit 1
+              ;;
+          esac
+          ARCHIVE="gitleaks_${VERSION}_linux_${arch}.tar.gz"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${ARCHIVE}" \
+            -o "${CKELETIN_CI_TEMP}/${ARCHIVE}"
+          grep "  ${ARCHIVE}$" .github/gitleaks_8.30.1.sha256 \
+            | (cd "$CKELETIN_CI_TEMP" && sha256sum --check --quiet)
+          tar -xz -C "$CKELETIN_CI_TEMP" -f "${CKELETIN_CI_TEMP}/${ARCHIVE}" gitleaks
+          echo "$CKELETIN_CI_TEMP" >> "$GITHUB_PATH"
 
       - name: Scan git history for secrets
-        run: gitleaks git -v --redact --no-banner --config .ckeletin/configs/gitleaks.toml
+        run: gitleaks git -v --redact --no-banner --config "$(bash .ckeletin/scripts/gitleaks-config.sh)"
+
+      - name: Remove job temp folder
+        if: always()
+        shell: bash
+        run: rm -rf -- "$CKELETIN_CI_TEMP"
+
+  secret-scan-gate:
+    name: Secret scan gate
+    # The scan stays out of `just check` so a missing local binary does not
+    # block the build. This job is the check branch protection can require.
+    # A workflow cannot set that protection itself. It runs on every event
+    # that can merge and accepts only a successful secret-scan. A schedule
+    # does not merge, and the scan is skipped there.
+    needs: [secret-scan]
+    if: always() && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare job temp folder
+        shell: bash
+        run: |
+          set -eu
+          # Recover folders this user abandoned more than six hours ago.
+          # Keep recent folders and never follow links.
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
+            -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
+          CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
+          for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
+            echo "$name=$CKELETIN_CI_TEMP" >> "$GITHUB_ENV"
+          done
+
+      - name: Require a successful secret scan
+        run: |
+          set -eu
+          result="${{ needs.secret-scan.result }}"
+          if [ "$result" != "success" ]; then
+            echo "secret-scan result is ${result}. A merge needs success."
+            exit 1
+          fi
 
       - name: Remove job temp folder
         if: always()
@@ -368,7 +421,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do
@@ -424,9 +477,11 @@ jobs:
 
   per-commit:
     name: Per-commit slice
-    # Cheap checks on every commit of a pull request. The Check job still runs
-    # full `just check` on the tip. This job exists so a red middle commit is
-    # visible before it is rewritten away.
+    # Walks every commit of a pull request. On a large workspace this is the
+    # slow job: one consumer needed a 360 minute timeout. The checks can live
+    # under another job name. Do not list this job in a required-gates needs.
+    # It is skipped on push to main, and a skipped need fails success.
+    # Advisories stay on the tip, in the Check job, not on each historical commit.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -436,7 +491,7 @@ jobs:
           set -eu
           # Recover folders this user abandoned more than six hours ago.
           # Keep recent folders and never follow links.
-          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ck-*' \
+          find "$(dirname "$CKELETIN_CI_TEMP")" -maxdepth 1 -type d -name 'ckeletin-rust-*' \
             -user "$(id -un)" -mmin +360 -exec rm -rf -- {} +
           CKELETIN_CI_TEMP=$(mktemp -d "$CKELETIN_CI_TEMP")
           for name in CKELETIN_CI_TEMP TMPDIR TMP TEMP; do

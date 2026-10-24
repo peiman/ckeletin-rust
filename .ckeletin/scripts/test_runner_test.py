@@ -100,6 +100,13 @@ print(json.dumps({
             self.assertLess(len(os.fsencode(got["socket"])), 104)
             self.assertFalse(got["tmp_is_link"])
             self.assertTrue(_credential_walk_allows(got["tmp"]))
+            current = Path(got["tmp"]).anchor or "/"
+            for part in Path(got["tmp"]).parts[1:]:
+                current = str(Path(current) / part)
+                self.assertFalse(
+                    os.path.islink(current),
+                    f"{current} is a symlink; the short temp folder must be a real path",
+                )
             self.assertFalse(
                 str(Path(got["tmp_real"])).startswith(str(Path(inherited).resolve()))
             )
