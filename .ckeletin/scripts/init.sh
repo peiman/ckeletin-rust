@@ -9,6 +9,16 @@ if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
     exit 1
 fi
 
+# The CI temp folder is /tmp/<name>-ci.XXXXXXXX. ci_temp.rs requires that
+# template plus 71 bytes to fit in a 104-byte socket path, which leaves 15
+# characters for the name. Reject a longer name before any file is rewritten.
+CI_TEMPLATE="/tmp/${NAME}-ci.XXXXXXXX"
+if [ $((${#CI_TEMPLATE} + 71)) -gt 104 ]; then
+    echo "Error: name '$NAME' is too long for the CI temp folder."
+    echo "Use 15 characters or fewer so the template plus 71 bytes fits in 104."
+    exit 1
+fi
+
 # Guard: refuse to run on an already-initialized / consumer repo.
 # Detection: the upstream slug "peiman/ckeletin-rust" is rewritten by THIS
 # script (step 2 below) so if it's absent, this is a derived project.
@@ -72,6 +82,24 @@ sedi "s/\"CKELETIN_\"/\"${UPPER_NAME}_\"/" crates/cli/src/main.rs
 # 4. Update ping message to use new name
 sedi "s/ckeletin-rust is alive/$NAME is alive/g" crates/domain/src/ping.rs
 sedi "s/ckeletin-rust/$NAME/g" crates/cli/tests/cli.rs
+
+# 4b. Rename the baked CI temp prefix. The prepare step runs before checkout,
+# so it cannot read .github/CI_TEMP_PREFIX. The workflows carry the same
+# token. A line that gates a job on the upstream repository stays verbatim,
+# or a derived project would start running upstream-only jobs.
+printf '%s\n' "$NAME" > .github/CI_TEMP_PREFIX
+for wf in .github/workflows/*.yml; do
+    [ -f "$wf" ] || continue
+    tmp=$(mktemp)
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            *"github.repository =="*) printf '%s\n' "$line" ;;
+            *) printf '%s\n' "${line//ckeletin-rust/$NAME}" ;;
+        esac
+    done < "$wf" > "$tmp"
+    cat "$tmp" > "$wf"
+    rm -f "$tmp"
+done
 
 # NOTE: The `ping` command is intentionally KEPT as the worked example. The
 # steps above already renamed it (domain logic, CLI handler, and both the

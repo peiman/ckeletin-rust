@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays the total envelope. CI uses a project temp prefix, accepts both
   `always()` forms and an action-pinned just, and does not require the job
   name `per-commit`. `secret-scan-gate` is the check to require. The gitleaks
-  install is checksummed and does not use sudo. The notice still stays silent
+  install is checksummed and does not use sudo. `just init` renames the CI
+  temp prefix to the new project. The notice still stays silent
   when `CI` is set (CKSPEC-UPD-001).
 - **Framework 0.2.33.** Per-commit CI checks licenses, bans, and sources.
   Advisories stay on the tip. A dry run fetches one ref. A failed `just check`

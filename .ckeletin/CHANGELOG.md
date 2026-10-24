@@ -31,7 +31,11 @@
   `ckeletin-rust-*`. A shared `ck-*` sweep is no longer accepted. On the next
   update, add that file and point `CKELETIN_CI_TEMP` and the sweep at it.
   The prefix has to leave room for a socket path: the template plus 71 bytes
-  must fit in 104.
+  must fit in 104. `just init` writes the new project name into
+  `.github/CI_TEMP_PREFIX` and into those workflow paths. A job line that
+  checks `github.repository == 'peiman/ckeletin-rust'` stays, so an
+  upstream-only job stays upstream-only. A name longer than 15 characters
+  does not fit and init stops.
 - **CI shape accepts the same GitHub forms.** Cleanup may say `if: always()`
   or `if: ${{ always() }}`. A `just@` action pin is accepted when it matches
   `.github/JUST_VERSION`. `cargo install just` still has to read that file.
