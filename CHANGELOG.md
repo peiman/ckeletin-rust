@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The README follows the ckeletin-go shape: a banner, badges, and the same sections. The mark is the same skeleton, in rust orange, on a white background.
+- The README follows the ckeletin-go shape: a banner, badges, and the same sections. The mark is the same skeleton, in rust orange, on a transparent background.
 
 ### Fixed
 
