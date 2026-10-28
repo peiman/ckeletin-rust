@@ -176,7 +176,7 @@ Conformance against the spec is recorded in **[CONFORMANCE.md](CONFORMANCE.md)**
 ## Key Features
 
 - **Compile-time layers**: the workspace graph is the architecture
-- **Structured logging**: tracing, with an audit file on by default
+- **Structured logging**: tracing, with an audit file on by default. The file stays fail-closed. `log_file_best_effort = true` keeps the command running when the file cannot be written, and prints one stderr warning
 - **Typed configuration**: figment. Flags, then environment, then the config file, then `[defaults]` in `ckeletin-project.toml`
 - **Command catalog**: `catalog` walks the live clap tree, so the catalog cannot drift from the commands
 - **Task runner**: one Justfile for check, test, fmt, build, and the framework recipes

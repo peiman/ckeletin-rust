@@ -579,6 +579,51 @@ fn config_json_true_error_path_is_json_envelope() {
         .stderr(predicate::str::is_empty());
 }
 
+#[test]
+fn best_effort_audit_log_keeps_the_command_and_warns_on_stderr() {
+    // Opt-in. The same unwritable path that fails closed must not fail the
+    // command, must not touch the JSON envelope on stdout, and must name the
+    // path, the cause, and how to turn the log off — once, on stderr.
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_audit = "/dev/null/cannot-create-dir/app.log";
+    let cfg = write_config(
+        tmp.path(),
+        &format!(
+            "json = true\nlog_file_enabled = true\nlog_file_best_effort = true\nlog_file_path = \"{bad_audit}\"\n"
+        ),
+    );
+    let asserted = Command::cargo_bin("ckeletin-rust")
+        .unwrap()
+        .args(["--config", cfg.to_str().unwrap(), "ping"])
+        .assert()
+        .success();
+    let output = asserted.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("\"status\": \"success\""),
+        "stdout must stay the JSON envelope, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("warning:"),
+        "the audit warning must not land on stdout, got: {stdout}"
+    );
+    assert!(stderr.contains(bad_audit), "stderr: {stderr}");
+    assert!(
+        stderr.contains("not a directory") || stderr.contains("not being written"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("log_file_enabled=false") && stderr.contains("--no-audit"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(
+        stderr.matches("warning:").count(),
+        1,
+        "one warning only, got: {stderr}"
+    );
+}
+
 // --- catalog command (CKSPEC-AGENT-006: machine-readable command catalog) ---
 
 #[test]

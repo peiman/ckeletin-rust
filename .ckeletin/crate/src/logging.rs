@@ -21,6 +21,9 @@ pub struct LogConfig {
     pub file_path: String,
     /// File log level filter string (typically "debug" or "trace").
     pub file_level: String,
+    /// When true, a failure to open or write the audit file warns once on
+    /// stderr and the command continues. Default false: `init` returns the error.
+    pub file_best_effort: bool,
 }
 
 impl Default for LogConfig {
@@ -30,6 +33,164 @@ impl Default for LogConfig {
             file_enabled: false,
             file_path: "logs/app.log".to_string(),
             file_level: "debug".to_string(),
+            file_best_effort: false,
+        }
+    }
+}
+
+/// Whether `path` is absent. A dangling symlink is present: `symlink_metadata`
+/// sees the link, while `Path::exists` follows it and reports absence.
+pub fn path_is_missing(path: &Path) -> bool {
+    matches!(
+        std::fs::symlink_metadata(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
+}
+
+/// Writability of an audit log path.
+///
+/// The walk uses `symlink_metadata`, which does not follow links. A dangling
+/// symlink is not writable, including when its parent directory is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileLogStatus {
+    /// The path that was checked.
+    pub path: PathBuf,
+    /// True when the file can be created or appended.
+    pub writable: bool,
+    /// Empty when `writable` is true. Otherwise the first blocking reason.
+    pub reason: String,
+}
+
+/// Report whether `path` can be created or appended.
+pub fn file_log_status(path: &Path) -> FileLogStatus {
+    match audit_path_writability(path) {
+        Ok(()) => FileLogStatus {
+            path: path.to_path_buf(),
+            writable: true,
+            reason: String::new(),
+        },
+        Err(reason) => FileLogStatus {
+            path: path.to_path_buf(),
+            writable: false,
+            reason,
+        },
+    }
+}
+
+fn audit_path_writability(path: &Path) -> Result<(), String> {
+    let mut current = path.to_path_buf();
+    let mut creating_child = false;
+    loop {
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() && std::fs::metadata(&current).is_err() {
+                    return Err(format!("dangling symlink: {}", current.display()));
+                }
+                let followed = std::fs::metadata(&current).map_err(|error| error.to_string())?;
+                if creating_child && !followed.is_dir() {
+                    return Err(format!("not a directory: {}", current.display()));
+                }
+                if !path_is_writable(&current) {
+                    return Err(format!("not writable: {}", current.display()));
+                }
+                return Ok(());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                creating_child = true;
+                if !current.pop() {
+                    return Err(format!("no existing ancestor of {}", path.display()));
+                }
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
+/// One status-stream line for an opt-in best-effort audit log.
+///
+/// Command output goes through `Output` (CKSPEC-OUT-005). This line is the
+/// logging subsystem reporting that the audit stream itself failed. It is one
+/// line on stderr. It does not write the command's stdout envelope.
+pub fn audit_unavailable_warning(path: &str, cause: &str) -> String {
+    format!(
+        "warning: audit log {path} is not being written: {cause}. The command will continue. Turn the log off with --no-audit or log_file_enabled=false."
+    )
+}
+
+fn warn_audit_unavailable(path: &str, cause: &str) {
+    use std::io::Write;
+    let _ = writeln!(
+        std::io::stderr(),
+        "{}",
+        audit_unavailable_warning(path, cause)
+    );
+}
+
+#[cfg(unix)]
+fn path_is_writable(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let mut bytes = path.as_os_str().as_bytes().to_vec();
+    bytes.push(0);
+    // SAFETY: `bytes` is a NUL-terminated path and lives for this call.
+    // `access` is POSIX. The return is only compared with zero.
+    let rc = unsafe { access(bytes.as_ptr().cast(), 2) };
+    rc == 0
+}
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn access(pathname: *const std::ffi::c_char, mode: i32) -> i32;
+}
+
+#[cfg(not(unix))]
+fn path_is_writable(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| !meta.permissions().readonly())
+        .unwrap_or(false)
+}
+
+/// Swallows a later write error and warns once. The command keeps running.
+struct WarnOnWriteError<W> {
+    inner: W,
+    path: String,
+    warned: std::sync::atomic::AtomicBool,
+}
+
+impl<W> WarnOnWriteError<W> {
+    fn new(inner: W, path: &str) -> Self {
+        Self {
+            inner,
+            path: path.to_string(),
+            warned: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    fn warn_once(&self, cause: &std::io::Error) {
+        if self.warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        warn_audit_unavailable(&self.path, &cause.to_string());
+    }
+}
+
+impl<W: std::io::Write> std::io::Write for WarnOnWriteError<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.inner.write(buf) {
+            Ok(count) => Ok(count),
+            Err(error) => {
+                self.warn_once(&error);
+                Ok(buf.len())
+            }
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self.inner.flush() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.warn_once(&error);
+                Ok(())
+            }
         }
     }
 }
@@ -166,6 +327,19 @@ pub fn resolve_audit_path(configured: &str, location: &str, app: &str) -> PathBu
 fn prepare_file_appender(
     file_path: &str,
 ) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), std::io::Error> {
+    prepare_file_appender_inner(file_path, false)
+}
+
+fn prepare_file_appender_best_effort(
+    file_path: &str,
+) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), std::io::Error> {
+    prepare_file_appender_inner(file_path, true)
+}
+
+fn prepare_file_appender_inner(
+    file_path: &str,
+    best_effort: bool,
+) -> Result<(tracing_appender::non_blocking::NonBlocking, WorkerGuard), std::io::Error> {
     if file_path.is_empty() {
         return Err(std::io::Error::other(
             "log_file_path must not be empty; set a path or disable the audit log",
@@ -228,6 +402,13 @@ fn prepare_file_appender(
         }
     }
 
+    if best_effort {
+        return Ok(tracing_appender::non_blocking(WarnOnWriteError::new(
+            file_appender,
+            file_path,
+        )));
+    }
+
     Ok(tracing_appender::non_blocking(file_appender))
 }
 
@@ -258,7 +439,26 @@ pub fn init(config: &LogConfig) -> Result<LogGuard, Box<dyn std::error::Error>> 
 
     if config.file_enabled {
         validate_level(&config.file_level)?;
-        let (non_blocking, guard) = prepare_file_appender(&config.file_path)?;
+        let prepared = if config.file_best_effort {
+            prepare_file_appender_best_effort(&config.file_path)
+        } else {
+            prepare_file_appender(&config.file_path)
+        };
+        let (non_blocking, guard) = match prepared {
+            Ok(opened) => opened,
+            Err(error) if config.file_best_effort => {
+                let status = file_log_status(Path::new(&config.file_path));
+                let cause = if status.writable {
+                    error.to_string()
+                } else {
+                    status.reason
+                };
+                warn_audit_unavailable(&config.file_path, &cause);
+                registry().with(stderr_layer).init();
+                return Ok(LogGuard { _guard: None });
+            }
+            Err(error) => return Err(error.into()),
+        };
 
         let file_filter = build_filter(&config.file_level);
 
@@ -302,10 +502,78 @@ mod tests {
             file_enabled: true,
             file_path: "/tmp/test.log".to_string(),
             file_level: "trace".to_string(),
+            file_best_effort: false,
         };
         assert_eq!(config.console_level, "debug");
         assert!(config.file_enabled);
         assert_eq!(config.file_level, "trace");
+        assert!(!config.file_best_effort);
+    }
+
+    #[test]
+    fn default_file_log_is_fail_closed() {
+        assert!(!LogConfig::default().file_best_effort);
+    }
+
+    #[test]
+    fn audit_warning_names_the_path_the_cause_and_how_to_turn_it_off() {
+        let warning = audit_unavailable_warning("/var/log/app.log", "permission denied");
+        assert!(warning.contains("/var/log/app.log"));
+        assert!(warning.contains("permission denied"));
+        assert!(warning.contains("--no-audit"));
+        assert!(warning.contains("log_file_enabled=false"));
+        assert!(!warning.contains('\n'));
+    }
+
+    #[test]
+    fn a_later_write_error_is_swallowed_once() {
+        use std::io::Write;
+        struct FailWriter;
+        impl std::io::Write for FailWriter {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("disk full"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut writer = WarnOnWriteError::new(FailWriter, "/tmp/app.log");
+        assert_eq!(writer.write(b"one").unwrap(), 3);
+        assert!(writer.warned.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(writer.write(b"two").unwrap(), 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_missing_and_is_not_writable() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("config-link");
+        std::os::unix::fs::symlink(dir.path().join("missing-target"), &link).unwrap();
+        assert!(
+            !link.exists(),
+            "Path::exists follows a dangling symlink and reports absence"
+        );
+        assert!(
+            !path_is_missing(&link),
+            "symlink_metadata must see the dangling link"
+        );
+        let log_path = link.join("logs").join("app.log");
+        let status = file_log_status(&log_path);
+        assert!(!status.writable, "{status:?}");
+        assert!(
+            status.reason.contains("dangling symlink"),
+            "{}",
+            status.reason
+        );
+        assert!(status.reason.contains("config-link"), "{}", status.reason);
+    }
+
+    #[test]
+    fn a_writable_directory_can_hold_the_audit_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("logs").join("app.log");
+        let status = file_log_status(&log_path);
+        assert!(status.writable, "{}", status.reason);
     }
 
     // ── build_filter tests ──────────────────────────────────────

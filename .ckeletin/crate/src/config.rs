@@ -39,6 +39,11 @@ pub struct Config {
     #[serde(default = "defaults::log_location")]
     pub log_location: String,
 
+    /// When true, a failure to open or write the audit file warns once and
+    /// the command continues. Default false: logging init fails closed.
+    #[serde(default = "defaults::log_file_best_effort")]
+    pub log_file_best_effort: bool,
+
     /// Enable JSON output mode globally.
     #[serde(default)]
     pub json: bool,
@@ -60,6 +65,9 @@ mod defaults {
     pub fn log_location() -> String {
         "config".to_string()
     }
+    pub fn log_file_best_effort() -> bool {
+        false
+    }
 }
 
 impl Default for Config {
@@ -70,6 +78,7 @@ impl Default for Config {
             log_file_path: defaults::log_file_path(),
             log_file_level: defaults::log_file_level(),
             log_location: defaults::log_location(),
+            log_file_best_effort: defaults::log_file_best_effort(),
             json: false,
         }
     }
@@ -90,6 +99,7 @@ const PROJECT_DEFAULT_KEYS: &[&str] = &[
     "log_file_path",
     "log_file_level",
     "log_location",
+    "log_file_best_effort",
     "json",
 ];
 
@@ -113,6 +123,8 @@ struct ProjectDefaults {
     log_file_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     log_location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_file_best_effort: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     json: Option<bool>,
 }
@@ -195,6 +207,9 @@ fn project_defaults(
             "log_file_path" => defaults.log_file_path = Some(value_as_string(&value, &key)?),
             "log_file_level" => defaults.log_file_level = Some(value_as_string(&value, &key)?),
             "log_location" => defaults.log_location = Some(value_as_string(&value, &key)?),
+            "log_file_best_effort" => {
+                defaults.log_file_best_effort = Some(value_as_bool(&value, &key)?);
+            }
             "json" => defaults.json = Some(value_as_bool(&value, &key)?),
             _ => {
                 return Err(format!(
@@ -245,6 +260,7 @@ mod tests {
         assert_eq!(config.log_file_path, "logs/app.log");
         assert_eq!(config.log_file_level, "debug");
         assert_eq!(config.log_location, "config");
+        assert!(!config.log_file_best_effort, "audit log stays fail-closed");
         assert!(!config.json);
     }
 
@@ -353,6 +369,7 @@ mod tests {
             jail.set_env("CKEVERY_LOG_FILE_PATH", "/tmp/test.log");
             jail.set_env("CKEVERY_LOG_FILE_LEVEL", "trace");
             jail.set_env("CKEVERY_LOG_LOCATION", "platform");
+            jail.set_env("CKEVERY_LOG_FILE_BEST_EFFORT", "true");
             jail.set_env("CKEVERY_JSON", "true");
 
             let config = load_in_jail(None, "CKEVERY_")?;
@@ -369,6 +386,10 @@ mod tests {
             assert_eq!(
                 config.log_location, "platform",
                 "LOG_LOCATION env not applied"
+            );
+            assert!(
+                config.log_file_best_effort,
+                "LOG_FILE_BEST_EFFORT env not applied"
             );
             assert!(config.json, "JSON env not applied");
             Ok(())
@@ -428,7 +449,22 @@ mod tests {
                 load_with_defaults("[defaults]\nlog_level = \"warn\"\n", None, TEST_PREFIX)?;
             assert_eq!(config.log_level, "warn");
             assert!(config.log_file_enabled);
+            assert!(!config.log_file_best_effort);
             assert!(!config.json);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn project_default_can_opt_into_best_effort_audit_log() {
+        Jail::expect_with(|_jail| {
+            let config = load_with_defaults(
+                "[defaults]\nlog_file_best_effort = true\n",
+                None,
+                TEST_PREFIX,
+            )?;
+            assert!(config.log_file_best_effort);
+            assert!(config.log_file_enabled);
             Ok(())
         });
     }
