@@ -129,12 +129,32 @@ fn doctor_json_is_machine_readable() {
             .is_some(),
         "json missing boolean components.clippy: {v}"
     );
-    assert!(
-        v.pointer("/audit_log/path")
-            .and_then(|x| x.as_str())
-            .is_some_and(|path| path.contains("ckeletin-rust")),
-        "json missing audit_log.path: {v}"
-    );
+    // The path is the consumer's, so this copied test must not hardcode the
+    // framework binary name. The resolver script is the source of that path.
+    let script =
+        std::path::Path::new(&workspace_root()).join(".ckeletin/scripts/audit-log-path.py");
+    let resolved = Command::new("python3")
+        .arg(&script)
+        .current_dir(workspace_root())
+        .output()
+        .expect("python3 audit-log-path.py");
+    let expected = String::from_utf8_lossy(&resolved.stdout);
+    let expected = expected.trim();
+    let path = v
+        .pointer("/audit_log/path")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    if resolved.status.success() && !expected.is_empty() {
+        assert_eq!(
+            path, expected,
+            "audit_log.path must be the consumer resolver output\n{v}"
+        );
+    } else {
+        assert_eq!(
+            path, "logs/app.log",
+            "doctor falls back to logs/app.log when the resolver does not run\n{v}"
+        );
+    }
     assert!(
         v.pointer("/audit_log/writable")
             .and_then(|x| x.as_bool())

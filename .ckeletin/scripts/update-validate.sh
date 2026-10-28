@@ -14,9 +14,24 @@ json_escape() {
     if [ "${#text}" -gt 8000 ]; then
         text="${text:0:8000}"$'\n'"…"
     fi
+    # Cargo on CI colors its diagnostics. A raw ESC in `reason` is not valid JSON.
+    if command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$text" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+text = re.sub(r"\x1b\][^\x07]*(?:\x07|\x1b\\)", "", text)
+text = text.replace("\\", "\\\\").replace("\"", "\\\"")
+text = text.replace("\r", "").replace("\n", "\\n").replace("\t", "\\t")
+text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+sys.stdout.write(text)
+'
+        return
+    fi
     text=${text//\\/\\\\}
     text=${text//\"/\\\"}
     text=${text//$'\n'/\\n}
+    text=${text//$'\t'/\\t}
     text=${text//$'\r'/}
     printf '%s' "$text"
 }
