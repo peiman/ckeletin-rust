@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-10-28
+
+### Fixed
+
+- **The local-difference guard uses the imported tree.** After a successful
+  compile, the update records that upstream commit in `.ckeletin-imported`
+  (project-owned, outside `.ckeletin/`). The next update compares against
+  that commit. With no record, it uses the first-parent commit that
+  introduced the version on disk, not a later commit that still carries the
+  same version and has already changed `.ckeletin/`.
+- **A secret-scan gate may read the result from the step `env`.** The check
+  accepts `needs.secret-scan.result` in the run script or in a step env
+  value. Other `needs.<job>.result` values the gate reads are success, so
+  the scan result is what varies. `${var#pattern}` is not a comment.
+- **`just ckeletin-doctor` reports the consumer's audit log.** The path is
+  the Cargo `[[bin]]` name plus `log_file_path` and `log_location` from the
+  environment, `config.toml`, `[defaults]`, then the framework defaults.
+- **A failed update names the diagnostic.** `cargo check` failure puts the
+  compiler error in `CKELETIN_UPDATE_RESULT` `reason` and rolls back. A
+  failed `just check` is streamed, and `reason` keeps the failing test or
+  compiler lines. The result fields are unchanged.
+- **The health lock test builds a tiny crate.** It no longer runs
+  `cargo check` on the consumer workspace or copies that workspace.
+
+### Changed
+
+- **Constructing `LogConfig` in code requires `file_best_effort`.** This
+  field arrived in 0.2.35. `false` keeps the fail-closed behavior: `init`
+  returns the error when the audit file cannot be opened. `true` warns once
+  on stderr and the command continues. `.ckeletin/UPDATE_NOTE` says the same
+  thing, and the update prints that note before it compiles.
+- **The failure report in this release applies on the next update.** The
+  recipe that runs is the one already installed. From 0.2.36, after the
+  files are replaced the update execs `ckeletin-update-continue` when that
+  recipe exists, so the imported framework reports the failure. The update
+  that installs 0.2.36 still finishes in the previous recipe.
+
 ## [0.2.35] - 2026-10-28
 
 ### Added

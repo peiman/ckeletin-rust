@@ -1,6 +1,6 @@
 [package]
 name = "ckeletin-catalog-clap"
-version = "0.2.35"
+version = "0.2.36"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false

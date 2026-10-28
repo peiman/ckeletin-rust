@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.36.** The update compares `.ckeletin/` with the commit
+  recorded in `.ckeletin-imported`, or with the commit that introduced that
+  version. A later commit that keeps the version is not the baseline.
+  `just ckeletin-doctor` reports the consumer binary's audit log. A failed
+  update streams `just check` and puts the compiler or test diagnostic in
+  `reason`. The health lock test builds a small crate. A secret-scan gate
+  may take `needs.*.result` from the step's `env`. Code that builds
+  `LogConfig` sets `file_best_effort` (`false` stays fail-closed). The
+  imported failure report applies when updating from 0.2.36 onward.
 - **Framework 0.2.35.** An optional `[layers] public` in
   `ckeletin-project.toml` is a shared library: domain and infrastructure may
   depend on it, and it must not depend on domain, infrastructure, or the CLI.

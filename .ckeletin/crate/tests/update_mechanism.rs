@@ -516,6 +516,11 @@ fn update_compile_fail_rolls_back_cleanly() {
     );
     assert_eq!(result["rolled_back"], true, "rolled_back must be true");
     assert_eq!(result["committed"], false, "committed must be false");
+    let reason = result["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("error") || reason.contains("@@@"),
+        "compile failure reason must include the cargo diagnostic\n{result}"
+    );
 }
 
 // ── Finding #3 — tag-pinned updates ──────────────────────────────────────────
@@ -599,6 +604,9 @@ fn copy_framework_update_files(ck: &Path) {
         "framework-local-diff.sh",
         "framework-lock.sh",
         "report-hook-drift.sh",
+        "update-validate.sh",
+        "gate-failure-reason.sh",
+        "changelog-consumer-edits.sh",
     ] {
         let script = root.join(".ckeletin/scripts").join(name);
         std::fs::copy(&script, scripts.join(name))
@@ -747,6 +755,98 @@ fn committed_local_file_stops_update() {
         !fix.consumer.join(".ckeletin/newfile.txt").exists(),
         "upstream file must not be applied when the update stops"
     );
+}
+
+/// A later upstream commit that keeps the version is not the imported tree.
+/// The consumer matches the commit that introduced the version, so the update runs.
+#[test]
+fn same_version_followup_is_not_a_local_difference() {
+    if !require_just("same_version_followup_is_not_a_local_difference") {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let upstream = tmp.path().join("upstream.git");
+    let consumer = tmp.path().join("consumer");
+    make_upstream(&upstream, "1.0.0");
+    upstream_add_commit(
+        &upstream,
+        "same version, framework file changed",
+        &[(".ckeletin/followup.txt", "not the import\n")],
+        &[],
+    );
+    upstream_add_commit(
+        &upstream,
+        "bump",
+        &[
+            (".ckeletin/VERSION", "2.0.0"),
+            (".ckeletin/newfile.txt", "from upstream\n"),
+        ],
+        &[],
+    );
+    make_consumer(&consumer, &upstream, "1.0.0");
+    install_ckeletin_justfile_into(&consumer);
+
+    let out = run_just(&consumer, &["ckeletin-update"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        out.status.success(),
+        "a same-version follow-up must not stop the update\n{combined}"
+    );
+    let result = parse_update_result(&combined);
+    assert_eq!(result["status"], "updated", "{result}");
+    assert_eq!(
+        std::fs::read_to_string(consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "2.0.0"
+    );
+    let recorded = std::fs::read_to_string(consumer.join(".ckeletin-imported")).unwrap();
+    let tip = git(&upstream_work(&upstream), &["rev-parse", "HEAD"]);
+    assert_eq!(recorded.trim(), tip);
+}
+
+/// `.ckeletin-imported` is the baseline when it names a commit, including when
+/// that commit is a same-version follow-up the tree did not import.
+#[test]
+fn recorded_import_is_the_baseline() {
+    if !require_just("recorded_import_is_the_baseline") {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let upstream = tmp.path().join("upstream.git");
+    let consumer = tmp.path().join("consumer");
+    make_upstream(&upstream, "1.0.0");
+    upstream_add_commit(
+        &upstream,
+        "same version, framework file changed",
+        &[(".ckeletin/followup.txt", "not the import\n")],
+        &[],
+    );
+    let followup = git(&upstream_work(&upstream), &["rev-parse", "HEAD"]);
+    upstream_add_commit(
+        &upstream,
+        "bump",
+        &[
+            (".ckeletin/VERSION", "2.0.0"),
+            (".ckeletin/newfile.txt", "from upstream\n"),
+        ],
+        &[],
+    );
+    make_consumer(&consumer, &upstream, "1.0.0");
+    install_ckeletin_justfile_into(&consumer);
+    std::fs::write(consumer.join(".ckeletin-imported"), format!("{followup}\n")).unwrap();
+
+    let out = run_just(&consumer, &["ckeletin-update"]);
+    assert_stopped(&out, "local_difference");
+    assert_eq!(
+        std::fs::read_to_string(consumer.join(".ckeletin/VERSION"))
+            .unwrap()
+            .trim(),
+        "1.0.0"
+    );
+    assert!(!consumer.join(".ckeletin/newfile.txt").exists());
 }
 
 /// `discard_local=true` continues only for a committed difference, says so,
