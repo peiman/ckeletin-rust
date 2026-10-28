@@ -252,36 +252,176 @@ fn needs_names(body: &str) -> Vec<String> {
         .collect()
 }
 
-/// Drop shell comments. A phrase that exists only in a comment is not a command.
+/// Drop shell comments. A `#` starts a comment only outside quotes and `${...}`.
+/// `${gate#*:}` and `$#` stay. A phrase that exists only in a comment is not a command.
 fn strip_shell_comments(script: &str) -> String {
     let mut out = String::new();
     for line in script.lines() {
-        let code = line.split('#').next().unwrap_or("");
+        let code = strip_shell_comment_line(line);
         if !code.trim().is_empty() {
-            out.push_str(code);
+            out.push_str(&code);
             out.push('\n');
         }
     }
     out
 }
 
-fn substitute_scan_result(script: &str, result: &str) -> String {
-    script
-        .replace("${{ needs.secret-scan.result }}", result)
-        .replace("${{needs.secret-scan.result}}", result)
+fn strip_shell_comment_line(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    let mut single = false;
+    let mut double = false;
+    let mut brace = 0;
+    let mut escape = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escape {
+            out.push(ch);
+            escape = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            out.push(ch);
+            escape = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double && brace == 0 {
+            single = !single;
+            out.push(ch);
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single && brace == 0 {
+            double = !double;
+            out.push(ch);
+            index += 1;
+            continue;
+        }
+        if ch == '$' && !single {
+            out.push(ch);
+            if chars.get(index + 1) == Some(&'{') {
+                brace += 1;
+                out.push('{');
+                index += 2;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+        if ch == '}' && brace > 0 && !single {
+            brace -= 1;
+            out.push(ch);
+            index += 1;
+            continue;
+        }
+        if ch == '#' && !single && !double && brace == 0 && !out.ends_with('$') {
+            break;
+        }
+        out.push(ch);
+        index += 1;
+    }
+    out
 }
 
-fn run_bash(script: &str) -> std::process::ExitStatus {
-    Command::new("bash")
-        .arg("-c")
-        .arg(script)
-        .output()
-        .expect("bash")
-        .status
+/// `${{ needs.<job>.result }}`, with optional space inside the braces.
+fn needs_result_job(value: &str) -> Option<String> {
+    let compact: String = value.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let inner = compact.strip_prefix("${{")?.strip_suffix("}}")?;
+    let job = inner.strip_prefix("needs.")?.strip_suffix(".result")?;
+    if job.is_empty() {
+        None
+    } else {
+        Some(job.to_string())
+    }
+}
+
+fn substitute_needs_results(script: &str, scan_result: &str) -> String {
+    let mut out = String::new();
+    let mut rest = script;
+    while let Some(start) = rest.find("${{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 3..];
+        let Some(end) = after.find("}}") else {
+            out.push_str(rest);
+            return out;
+        };
+        let expr = &rest[start..start + 3 + end + 2];
+        if let Some(job) = needs_result_job(expr) {
+            if job == "secret-scan" {
+                out.push_str(scan_result);
+            } else {
+                out.push_str("success");
+            }
+        } else {
+            out.push_str(expr);
+        }
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Step `env:` entries whose value is another job's result.
+fn step_result_env(step: &str) -> Vec<(String, String)> {
+    let mut bindings = Vec::new();
+    let mut env_indent: Option<usize> = None;
+    for line in step.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if env_indent.is_none() && trimmed == "env:" {
+            env_indent = Some(indent);
+            continue;
+        }
+        let Some(env_at) = env_indent else {
+            continue;
+        };
+        if indent <= env_at {
+            env_indent = None;
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        if let Some(job) = needs_result_job(value.trim()) {
+            bindings.push((key.trim().to_string(), job));
+        }
+    }
+    bindings
+}
+
+fn step_is_scan_gate(step: &str) -> bool {
+    let body = strip_shell_comments(&run_body(step));
+    body.contains("needs.secret-scan.result")
+        || step_result_env(step)
+            .iter()
+            .any(|(_, job)| job == "secret-scan")
+}
+
+fn run_gate(step: &str, scan_result: &str) -> std::process::ExitStatus {
+    let script = substitute_needs_results(&strip_shell_comments(&run_body(step)), scan_result);
+    let mut command = Command::new("bash");
+    command.arg("-c").arg(script);
+    for (key, job) in step_result_env(step) {
+        let value = if job == "secret-scan" {
+            scan_result
+        } else {
+            "success"
+        };
+        command.env(key, value);
+    }
+    command.output().expect("bash").status
 }
 
 /// The job needs `secret-scan`, and its gate step exits non-zero for a failed
-/// scan and zero for success. The comparison is executed, not matched as text.
+/// scan and zero for success. The result may be inlined or passed through the
+/// step's `env`. Other job results the gate reads are success, so the scan
+/// result is what the check varies. The comparison is executed, not matched as text.
 fn gate_accepts_only_success(job: &Job) -> bool {
     if !needs_names(&job.body)
         .iter()
@@ -289,19 +429,18 @@ fn gate_accepts_only_success(job: &Job) -> bool {
     {
         return false;
     }
-    let Some(script) = top_steps(&job.body).into_iter().find_map(|step| {
-        let body = strip_shell_comments(&run_body(&step));
-        body.contains("needs.secret-scan.result").then_some(body)
-    }) else {
+    let Some(step) = top_steps(&job.body)
+        .into_iter()
+        .find(|step| step_is_scan_gate(step))
+    else {
         return false;
     };
     for result in ["failure", "skipped", "cancelled"] {
-        let status = run_bash(&substitute_scan_result(&script, result));
-        if status.success() {
+        if run_gate(&step, result).success() {
             return false;
         }
     }
-    run_bash(&substitute_scan_result(&script, "success")).success()
+    run_gate(&step, "success").success()
 }
 
 fn deny_choice_block(script: &str) -> Option<String> {
@@ -430,6 +569,51 @@ fn a_comment_is_not_a_secret_scan_gate() {
     assert!(
         !gate_accepts_only_success(&job),
         "a comment that names the scan result is not a gate"
+    );
+}
+
+#[test]
+fn shell_comment_strip_keeps_parameter_expansions() {
+    let stripped =
+        strip_shell_comments("gate=${result#*:} # trailing note\necho \"a # b\"\necho $# # gone\n");
+    assert!(
+        stripped.contains("${result#*:}"),
+        "a # inside ${{}} is not a comment:\n{stripped}"
+    );
+    assert!(
+        stripped.contains("a # b"),
+        "a # inside quotes is not a comment:\n{stripped}"
+    );
+    assert!(stripped.contains("$#"), "$# is not a comment:\n{stripped}");
+    assert!(
+        !stripped.contains("trailing") && !stripped.contains("gone"),
+        "a real comment is still removed:\n{stripped}"
+    );
+}
+
+#[test]
+fn gate_reads_scan_result_from_step_env() {
+    // A backslash-newline in a normal string drops the next line's indent.
+    // The job-level `needs:` key is four spaces, so this fixture is raw.
+    let job = Job {
+        name: "required-gates".to_string(),
+        body: r#"
+    needs: [secret-scan, ui]
+    steps:
+      - name: Gate
+        env:
+          SECRET_RESULT: ${{ needs.secret-scan.result }}
+          UI_RESULT: ${{ needs.ui.result }}
+        run: |
+          set -eu
+          test "$SECRET_RESULT" = success
+          test "$UI_RESULT" = success
+"#
+        .to_string(),
+    };
+    assert!(
+        gate_accepts_only_success(&job),
+        "a gate may read the scan result from the step env"
     );
 }
 

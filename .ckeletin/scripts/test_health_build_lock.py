@@ -4,8 +4,8 @@
 A green `cargo test` does not prove the nested check is isolated: the parent
 often drops `target/debug/.cargo-lock` before the test starts. This holds
 that lock and fails if `health_exits_zero_on_clean_tree` is still waiting.
-The nested check is a real workspace build, so the timeout has to outlast a
-cold `target/health-check`, not merely a lock wait.
+The nested check builds a tiny fixture crate. The timeout catches a test
+that is still waiting on this lock.
 """
 
 import json
@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parents[2]
 def timeout_seconds():
     """How long the nested health build may run.
 
-    A cold workspace check on a large consumer can pass 180 seconds. Set
-    CKELETIN_HEALTH_LOCK_TIMEOUT to a whole number of seconds. A missing or
-    unusable value keeps the 180 second default.
+    The nested check is a tiny crate. Set CKELETIN_HEALTH_LOCK_TIMEOUT to a
+    whole number of seconds when the machine is slow. A missing or unusable
+    value keeps the 180 second default.
     """
     raw = os.environ.get("CKELETIN_HEALTH_LOCK_TIMEOUT", "180")
     try:

@@ -213,3 +213,43 @@ fn doctor_json_and_text_report_same_components() {
         clippy_json
     );
 }
+
+/// The audit path uses the consumer's `[[bin]]` name, not the framework's.
+#[test]
+fn audit_path_uses_the_consumer_bin_name() {
+    if !have("python3") {
+        eprintln!("SKIP audit_path_uses_the_consumer_bin_name: `python3` not on PATH");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"workhorse\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"workhorse\"\npath = \"src/main.rs\"\n",
+    )
+    .unwrap();
+    let script =
+        std::path::Path::new(&workspace_root()).join(".ckeletin/scripts/audit-log-path.py");
+    let config_home = dir.path().join("config");
+    let out = Command::new("python3")
+        .arg(&script)
+        .current_dir(dir.path())
+        .env("XDG_CONFIG_HOME", &config_home)
+        .env_remove("CKELETIN_LOG_FILE_PATH")
+        .env_remove("CKELETIN_LOG_LOCATION")
+        .output()
+        .expect("python3 audit-log-path.py");
+    let path = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "audit path script failed\nstdout: {path}\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        path.contains("workhorse"),
+        "path must use the consumer bin name:\n{path}"
+    );
+    assert!(
+        !path.contains("ckeletin-rust"),
+        "path must not use the framework bin name:\n{path}"
+    );
+}

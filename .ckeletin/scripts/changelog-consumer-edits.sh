@@ -14,7 +14,7 @@ version=$2
 
 awk -v ver="$version" '
 function flush() {
-    if (bullet ~ /CI_TEMP_PREFIX|ckeletin-deny-history|secret-scan|ckeletin-project\.toml|\.github\//) {
+    if (bullet ~ /CI_TEMP_PREFIX|ckeletin-deny-history|secret-scan|ckeletin-project\.toml|\.github\/|LogConfig/) {
         printf "%s", bullet
     }
     bullet = ""

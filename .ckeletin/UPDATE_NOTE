@@ -7,3 +7,7 @@ If you updated from framework 0.2.30, that command re-resolved the whole Cargo.l
 
 git checkout HEAD -- Cargo.lock
 cargo update -p ckeletin
+
+Framework 0.2.35 added `LogConfig.file_best_effort`. If you construct `LogConfig` in code, set the field. `false` keeps the previous behavior: `init` returns the error when the audit file cannot be opened. `true` warns once on stderr and the command continues.
+
+The failure report added in 0.2.36 (the compiler or test diagnostic in `CKELETIN_UPDATE_RESULT`, and the handoff to `ckeletin-update-continue`) runs on updates that start from 0.2.36. The update that installs 0.2.36 still uses the recipe you already have. This note is what that update can show before it compiles.

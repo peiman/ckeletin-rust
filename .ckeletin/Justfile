@@ -42,7 +42,7 @@ ckeletin-health:
 # Prove ckeletin-health does not wait on the parent Cargo build lock.
 # A green `cargo test` is not this proof: the parent often releases
 # target/debug/.cargo-lock before the test body runs. The nested check is a
-# real workspace build, so the timeout has to outlast a cold target/health-check.
+# tiny fixture crate, so a timeout means the test is waiting on that lock.
 ckeletin-health-lock:
     .ckeletin/scripts/test_health_build_lock.py
 
@@ -66,15 +66,12 @@ ckeletin-doctor format="text":
     # succeed only when the component is installed for the active toolchain).
     RUSTFMT=$(cargo fmt --version >/dev/null 2>&1 && printf true || printf false)
     CLIPPY=$(cargo clippy --version >/dev/null 2>&1 && printf true || printf false)
-    # Same path the ckeletin-rust binary uses for a relative audit log.
-    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-        AUDIT_BASE="$XDG_CONFIG_HOME"
-    elif [ -n "${HOME:-}" ]; then
-        AUDIT_BASE="$HOME/.config"
-    else
-        AUDIT_BASE=".config"
+    # The binary's audit path: Cargo bin name plus the effective log config.
+    # Hard-coding the framework's own name checks a log the consumer never writes.
+    AUDIT_PATH=$(python3 .ckeletin/scripts/audit-log-path.py 2>/dev/null || true)
+    if [ -z "$AUDIT_PATH" ]; then
+        AUDIT_PATH="logs/app.log"
     fi
-    AUDIT_PATH="$AUDIT_BASE/ckeletin-rust/logs/app.log"
     AUDIT_JSON=$(python3 .ckeletin/scripts/audit-log-status.py "$AUDIT_PATH" 2>/dev/null || true)
     if [ -z "$AUDIT_JSON" ]; then
         AUDIT_JSON='{"path":"","writable":false}'
@@ -381,65 +378,31 @@ ckeletin-update version="main" discard_local="false" commit="true":
     # doc's "replaced wholesale" promise. `git checkout <ref> -- <path>` does NOT
     # delete files absent from the ref.
     git restore --source="$CHECKOUT_REF" --staged --worktree -- .ckeletin/
-    NEW_VERSION=$(cat .ckeletin/VERSION)
     refresh_framework_lock
-    # Tier 1: must still COMPILE. A non-compiling update is incompatible — roll
-    # back fully (the framework crate or a moved API broke the build).
-    if ! cargo check --workspace; then
-        echo "Error: workspace does not compile after update. Rolling back."
-        # Restore HEAD state wholesale: removes added files, restores deleted files.
-        git restore --source=HEAD --staged --worktree -- .ckeletin/
-        restore_framework_lock
-        # Rollback restored the previous tree, so a discard did not stick.
-        printf 'CKELETIN_UPDATE_RESULT={"status":"compile_failed","from":"%s","to":"%s","committed":false,"rolled_back":true,"reason":null,"discarded":false}\n' "$OLD_VERSION" "$NEW_VERSION"
-        exit 1
+    # The recipe now running was loaded before the restore. Hand the gate to
+    # the imported recipe so a failure uses that release's diagnostics. The
+    # handoff starts with the framework that contains ckeletin-update-continue.
+    # The update that first installs that recipe still finishes in this shell.
+    export CKELETIN_UPDATE_OLD_VERSION="$OLD_VERSION"
+    export CKELETIN_UPDATE_DISCARDED="$DISCARDED"
+    export CKELETIN_UPDATE_COMMIT="$REQ_COMMIT"
+    export CKELETIN_UPDATE_REF="$CHECKOUT_REF"
+    if [ -z "${CKELETIN_UPDATE_CONTINUED:-}" ] && just --show ckeletin-update-continue >/dev/null 2>&1; then
+        export CKELETIN_UPDATE_CONTINUED=1
+        exec just ckeletin-update-continue
     fi
-    # Tier 2: must pass the SAME gate the project runs — `just check` (clippy
-    # lints, deny, tests), NOT just `cargo check`. A release can tighten the gate
-    # (e.g. new clippy lints); auto-committing a red `just check` is what bit
-    # workhorse (2026-06-04). On failure DON'T roll back and DON'T commit: the
-    # update is left in the working tree so you can fix the new violations and
-    # commit yourself.
-    check_log=$(mktemp)
-    if ! just check >"$check_log" 2>&1; then
-        cat "$check_log"
-        echo ""
-        echo "Update to v$NEW_VERSION applied to the working tree, but 'just check' fails."
-        consumer_edits=$(bash .ckeletin/scripts/changelog-consumer-edits.sh .ckeletin/CHANGELOG.md "$NEW_VERSION" || true)
-        if [ -n "$consumer_edits" ]; then
-            echo "These changelog entries for v$NEW_VERSION name a file or recipe this update does not edit:"
-            printf '%s\n' "$consumer_edits"
-        else
-            echo "No changelog entry for v$NEW_VERSION names a file outside .ckeletin/. The failure above is in this repo."
-        fi
-        echo "Fix the violations above, then commit:"
-        echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
-        echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
-        reason_text=$(tail -n 20 "$check_log")
-        reason_text=${reason_text//\\/\\\\}
-        reason_text=${reason_text//\"/\\\"}
-        reason_text=${reason_text//$'\n'/\\n}
-        reason_text=${reason_text//$'\r'/}
-        rm -f "$check_log"
-        printf 'CKELETIN_UPDATE_RESULT={"status":"check_failed","from":"%s","to":"%s","committed":false,"rolled_back":false,"reason":"%s","discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$reason_text" "$DISCARDED"
-        exit 1
-    fi
-    rm -f "$check_log"
-    echo ""
-    echo "Updated ckeletin framework: v$OLD_VERSION → v$NEW_VERSION"
-    echo ""
-    git diff HEAD -- .ckeletin/CHANGELOG.md || true
-    if [ "$REQ_COMMIT" = "true" ]; then
-        git add -- .ckeletin/ Cargo.lock ':(exclude).ckeletin/cache'
-        git commit -m "chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION"
-        COMMITTED=true
-    else
-        echo "Applied and left uncommitted."
-        echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
-        COMMITTED=false
-    fi
-    # Final machine-readable verdict for an autonomous driver (workhorse).
-    printf 'CKELETIN_UPDATE_RESULT={"status":"updated","from":"%s","to":"%s","committed":%s,"rolled_back":false,"reason":null,"discarded":%s}\n' "$OLD_VERSION" "$NEW_VERSION" "$COMMITTED" "$DISCARDED"
+    # shellcheck source=scripts/update-validate.sh
+    source .ckeletin/scripts/update-validate.sh
+    run_update_validation
+
+# Gate for an update that already replaced `.ckeletin/`. `ckeletin-update`
+# execs this after the restore so the imported recipe reports the failure.
+ckeletin-update-continue:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # shellcheck source=scripts/update-validate.sh
+    source .ckeletin/scripts/update-validate.sh
+    run_update_validation
 
 # Preview update without applying. A local difference is printed. Nothing is modified.
 ckeletin-update-dry-run version="main":

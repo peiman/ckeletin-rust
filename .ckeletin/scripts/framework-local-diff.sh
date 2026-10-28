@@ -105,21 +105,50 @@ if ! git rev-parse --verify --quiet ckeletin-upstream/main >/dev/null; then
     exit 1
 fi
 
-# Newest commit on upstream main whose .ckeletin/VERSION equals the local one.
-find_baseline() {
-    local commit ver
+# The baseline is the tree this project imported, not the newest upstream
+# commit that still carries the same version. A later commit can keep the
+# version while changing .ckeletin/ (the 0.2.34 update picked such a commit
+# and reported a local difference that was not one).
+#
+# `.ckeletin-imported` is project-owned. The update writes the upstream commit
+# it checked out. When that record is missing or not in this clone, use the
+# first-parent commit that introduced this version: skip newer versions, then
+# the oldest commit in the contiguous run that still has it.
+IMPORTED_RECORD=".ckeletin-imported"
+
+baseline_from_record() {
+    local recorded
+    [ -f "$IMPORTED_RECORD" ] || return 0
+    recorded=$(tr -d '[:space:]' < "$IMPORTED_RECORD")
+    [ -n "$recorded" ] || return 0
+    if git cat-file -e "${recorded}^{commit}" 2>/dev/null; then
+        printf '%s\n' "$recorded"
+    fi
+}
+
+find_introduced_version() {
+    local commit ver found=""
     while IFS= read -r commit; do
         [ -z "$commit" ] && continue
         ver=$(git show "${commit}:.ckeletin/VERSION" 2>/dev/null | tr -d '[:space:]' || true)
         if [ "$ver" = "$FROM" ]; then
-            printf '%s\n' "$commit"
+            found=$commit
+            continue
+        fi
+        if [ -n "$found" ]; then
+            printf '%s\n' "$found"
             return 0
         fi
-    done < <(git log --format=%H ckeletin-upstream/main)
-    return 0
+    done < <(git log --first-parent --format=%H ckeletin-upstream/main)
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found"
+    fi
 }
 
-baseline=$(find_baseline)
+baseline=$(baseline_from_record)
+if [ -z "$baseline" ]; then
+    baseline=$(find_introduced_version)
+fi
 if [ -z "$baseline" ]; then
     echo "Error: no commit on ckeletin-upstream/main has .ckeletin/VERSION ${FROM}."
     if [ "$mode" = "dry-run" ]; then

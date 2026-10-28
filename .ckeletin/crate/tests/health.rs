@@ -8,20 +8,11 @@
 //! (the `|| echo "Workspace: BROKEN"` construct swallows the exit code).
 //! Fix: use an if/else that calls `exit 1` on compile failure.
 //!
-//! Tests:
-//! - Clean tree: `just ckeletin-health` exits 0 and prints "Workspace: compiles".
-//! - Broken workspace fixture: health exits non-zero and prints "Workspace: BROKEN".
+//! The fixture is a tiny crate. The health recipe still checks the real
+//! workspace when `just check` runs it. These tests must not cargo-check
+//! that workspace a second time.
 
 use std::{path::Path, process::Command};
-
-fn workspace_root() -> std::path::PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .ckeletin/crate
-    Path::new(manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap()
-        .to_path_buf()
-}
 
 fn have(cmd: &str) -> bool {
     Command::new(cmd)
@@ -31,24 +22,13 @@ fn have(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Point the nested `cargo check` at its own target and build directories.
-///
-/// `ckeletin-health` runs `cargo check` in this same workspace. Cargo 1.96
-/// serializes that check on `target/debug/.cargo-lock`. A parent `cargo test`
-/// that still holds the lock waits until the job timeout. The two directories
-/// have independent locks, so overriding only `CARGO_TARGET_DIR` is not enough
-/// when the caller also set `CARGO_BUILD_BUILD_DIR`.
-fn isolate_cargo_build(command: &mut Command, root: &Path) {
-    let target_dir = root.join("target/health-check");
-    let build_dir = target_dir.join("build");
-    std::fs::create_dir_all(&build_dir).unwrap_or_else(|error| {
-        panic!(
-            "create health-check build dir {}: {error}",
-            build_dir.display()
-        );
-    });
-    command.env("CARGO_TARGET_DIR", &target_dir);
-    command.env("CARGO_BUILD_BUILD_DIR", &build_dir);
+fn framework_root() -> std::path::PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .ckeletin/crate
+    Path::new(manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf()
 }
 
 /// Git env for hermetic commits (CI runners have no identity).
@@ -61,8 +41,74 @@ fn git_env() -> [(&'static str, &'static str); 4] {
     ]
 }
 
-/// `just ckeletin-health` on the clean upstream tree must exit 0 and report
-/// "Workspace: compiles". This is the gate `just check` depends on.
+/// A one-member workspace plus the real health recipe.
+///
+/// `cargo check` writes under the fixture's `target/`. That directory is not
+/// the consumer workspace's build, so the check does not take the parent
+/// `target/debug/.cargo-lock`.
+fn health_fixture(broken: bool) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path();
+    let app = project.join("app/src");
+    let ck = project.join(".ckeletin");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::create_dir_all(&ck).unwrap();
+    std::fs::write(
+        project.join("Cargo.toml"),
+        "[workspace]\nresolver = \"2\"\nmembers = [\"app\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("app/Cargo.toml"),
+        "[package]\nname = \"health-fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let source = if broken {
+        "this is not valid rust @@@\n"
+    } else {
+        "pub fn ok() {}\n"
+    };
+    std::fs::write(app.join("lib.rs"), source).unwrap();
+    let framework = framework_root().join(".ckeletin");
+    std::fs::copy(framework.join("Justfile"), ck.join("Justfile")).unwrap();
+    std::fs::write(ck.join("VERSION"), "0.0.0\n").unwrap();
+    std::fs::write(project.join("Justfile"), "import '.ckeletin/Justfile'\n").unwrap();
+
+    Command::new("git")
+        .args(["init", "-b", "main"])
+        .current_dir(project)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(project)
+        .status()
+        .unwrap();
+    let commit = Command::new("git")
+        .args(["commit", "-m", "fixture"])
+        .current_dir(project)
+        .envs(git_env())
+        .status()
+        .unwrap();
+    assert!(commit.success(), "fixture commit failed");
+    tmp
+}
+
+fn run_health(project: &Path) -> std::process::Output {
+    let target = project.join("target");
+    let build = target.join("build");
+    std::fs::create_dir_all(&build).unwrap();
+    Command::new("just")
+        .arg("ckeletin-health")
+        .current_dir(project)
+        .env("CARGO_TARGET_DIR", &target)
+        .env("CARGO_BUILD_BUILD_DIR", &build)
+        .output()
+        .expect("failed to run `just ckeletin-health`")
+}
+
+/// `just ckeletin-health` on a compiling tree must exit 0 and report
+/// "Workspace: compiles". This is the test `ckeletin-health-lock` runs.
 #[test]
 fn health_exits_zero_on_clean_tree() {
     if !have("just") {
@@ -74,14 +120,8 @@ fn health_exits_zero_on_clean_tree() {
         return;
     }
 
-    let root = workspace_root();
-    let mut command = Command::new("just");
-    command.arg("ckeletin-health").current_dir(&root);
-    isolate_cargo_build(&mut command, &root);
-    let out = command
-        .output()
-        .expect("failed to run `just ckeletin-health`");
-
+    let fixture = health_fixture(false);
+    let out = run_health(fixture.path());
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -95,76 +135,21 @@ fn health_exits_zero_on_clean_tree() {
     );
 }
 
-/// `just ckeletin-health` on a workspace with a compile error must exit non-zero
-/// and report "Workspace: BROKEN", so `just check` acts as a real gate.
+/// `just ckeletin-health` on a crate with a compile error must exit non-zero
+/// and report "Workspace: BROKEN".
 #[test]
 fn health_exits_nonzero_on_broken_workspace() {
-    if !have("just") || !have("rsync") {
+    if !have("just") {
         let ci = std::env::var("CI").unwrap_or_default();
         if ci == "true" {
-            panic!("FAIL health_exits_nonzero_on_broken_workspace: `just`/`rsync` required on CI");
+            panic!("FAIL health_exits_nonzero_on_broken_workspace: `just` required on CI");
         }
-        eprintln!("SKIP health_exits_nonzero_on_broken_workspace: `just`/`rsync` not on PATH");
+        eprintln!("SKIP health_exits_nonzero_on_broken_workspace: `just` not on PATH");
         return;
     }
 
-    let root = workspace_root();
-    let tmp = tempfile::tempdir().unwrap();
-    let project_dir = tmp.path().join("broken-workspace");
-
-    // Copy the scaffold (exclude .git and target so it is fast).
-    let status = Command::new("rsync")
-        .args([
-            "-a",
-            "--exclude=.git",
-            "--exclude=target",
-            &format!("{}/", root.to_str().unwrap()),
-            project_dir.to_str().unwrap(),
-        ])
-        .status()
-        .expect("rsync failed");
-    assert!(status.success(), "rsync copy failed");
-
-    // Initialise a git repo so ckeletin-health can run `git status`.
-    Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(&project_dir)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "ckeletin test"])
-        .current_dir(&project_dir)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "test@ckeletin.test"])
-        .current_dir(&project_dir)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(&project_dir)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "scaffold copy"])
-        .current_dir(&project_dir)
-        .envs(git_env())
-        .status()
-        .unwrap();
-
-    // Introduce a deliberate compile error into the framework crate.
-    let lib_rs = project_dir.join(".ckeletin/crate/src/lib.rs");
-    let original = std::fs::read_to_string(&lib_rs).unwrap();
-    std::fs::write(&lib_rs, format!("{original}\nthis is not valid rust @@@\n")).unwrap();
-
-    let mut command = Command::new("just");
-    command.arg("ckeletin-health").current_dir(&project_dir);
-    isolate_cargo_build(&mut command, &project_dir);
-    let out = command
-        .output()
-        .expect("failed to run `just ckeletin-health`");
-
+    let fixture = health_fixture(true);
+    let out = run_health(fixture.path());
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
