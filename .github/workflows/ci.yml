@@ -532,7 +532,14 @@ jobs:
             just ckeletin-fmt-check
             just ckeletin-clippy
             cargo check --workspace --all-targets
-            just ckeletin-deny-history
+            # A commit from before this recipe existed has no just target.
+            # The cargo deny invocation is the same licenses, bans, and sources
+            # check. Advisories stay on the pull request tip.
+            if just --show ckeletin-deny-history >/dev/null 2>&1; then
+              just ckeletin-deny-history
+            else
+              cargo deny check licenses bans sources
+            fi
             echo "Advisories are checked on the pull request tip by the Check job, not on each historical commit."
           done
 

@@ -386,8 +386,14 @@ ckeletin-update version="main" discard_local="false" commit="true":
         cat "$check_log"
         echo ""
         echo "Update to v$NEW_VERSION applied to the working tree, but 'just check' fails."
-        echo "This release likely tightened a gate (e.g. clippy). Fix the violations"
-        echo "above (real fix, or a reasoned #[allow]), then commit:"
+        consumer_edits=$(bash .ckeletin/scripts/changelog-consumer-edits.sh .ckeletin/CHANGELOG.md "$NEW_VERSION" || true)
+        if [ -n "$consumer_edits" ]; then
+            echo "These changelog entries for v$NEW_VERSION name a file or recipe this update does not edit:"
+            printf '%s\n' "$consumer_edits"
+        else
+            echo "No changelog entry for v$NEW_VERSION names a file outside .ckeletin/. The failure above is in this repo."
+        fi
+        echo "Fix the violations above, then commit:"
         echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
         reason_text=$(tail -n 20 "$check_log")
