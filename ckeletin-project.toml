@@ -18,6 +18,11 @@
 #
 # [defaults]
 # log_level = "warn"
+# The audit file stays fail-closed. Set this to keep the command running when
+# the file cannot be opened or a later write fails. One stderr warning names
+# the path and how to turn the log off. Stdout, including a JSON envelope,
+# is unchanged.
+# log_file_best_effort = false
 #
 # JSON envelope. `total` (the default) always writes status, command, data,
 # and error. `error` is {code, message} and an absent value is JSON null.
@@ -37,6 +42,7 @@
 #   domain = ["chat-core", "chat-models"]
 #   infrastructure = ["chat-infra"]
 #   cli = ["chat-cli"]
+#   public = ["crates/common"]
 
 [layers]
 domain = ["crates/domain"]
@@ -60,6 +66,7 @@ cli = ["crates/cli"]
 #   # sha2: content hashing for deduplication
 #   domain = ["serde", "serde_json", "indexmap", "regex", "chrono", "thiserror", "sha2"]
 #   infrastructure = ["ckeletin"]
+#   public = ["serde"]
 
 [allowlists]
 # serde: required — typed serialization for domain result types (CKSPEC-ARCH-004)

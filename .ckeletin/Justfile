@@ -66,6 +66,20 @@ ckeletin-doctor format="text":
     # succeed only when the component is installed for the active toolchain).
     RUSTFMT=$(cargo fmt --version >/dev/null 2>&1 && printf true || printf false)
     CLIPPY=$(cargo clippy --version >/dev/null 2>&1 && printf true || printf false)
+    # Same path the ckeletin-rust binary uses for a relative audit log.
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        AUDIT_BASE="$XDG_CONFIG_HOME"
+    elif [ -n "${HOME:-}" ]; then
+        AUDIT_BASE="$HOME/.config"
+    else
+        AUDIT_BASE=".config"
+    fi
+    AUDIT_PATH="$AUDIT_BASE/ckeletin-rust/logs/app.log"
+    AUDIT_JSON=$(python3 .ckeletin/scripts/audit-log-status.py "$AUDIT_PATH" 2>/dev/null || true)
+    if [ -z "$AUDIT_JSON" ]; then
+        AUDIT_JSON='{"path":"","writable":false}'
+    fi
+    AUDIT_WRITABLE=$(python3 -c 'import json,sys; print("yes" if json.loads(sys.stdin.read()).get("writable") else "no")' <<<"$AUDIT_JSON" 2>/dev/null || echo no)
     if [ "{{format}}" = "json" ]; then
         present() { command -v "$1" >/dev/null 2>&1 && printf true || printf false; }
         printf '{"framework_version":"%s","toolchain":{"pinned":"%s","msrv":"%s","rustc":"%s"},' \
@@ -74,8 +88,9 @@ ckeletin-doctor format="text":
         printf '"tools":{'
         printf '"cargo-deny":%s,"cargo-llvm-cov":%s,"cargo-nextest":%s,"just":%s,"gitleaks":%s,' \
             "$(present cargo-deny)" "$(present cargo-llvm-cov)" "$(present cargo-nextest)" "$(present just)" "$(present gitleaks)"
-        printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s,"cargo-outdated":%s}}\n' \
+        printf '"cargo-cyclonedx":%s,"grype":%s,"cargo-geiger":%s,"cargo-bolero":%s,"cargo-outdated":%s},' \
             "$(present cargo-cyclonedx)" "$(present grype)" "$(present cargo-geiger)" "$(present cargo-bolero)" "$(present cargo-outdated)"
+        printf '"audit_log":%s}\n' "$AUDIT_JSON"
         exit 0
     fi
     echo "ckeletin framework v{{ckeletin_version}}"
@@ -101,6 +116,10 @@ ckeletin-doctor format="text":
     report cargo-geiger "cargo-geiger (just ckeletin-geiger, advisory)" "optional: cargo install cargo-geiger --locked"
     report cargo-bolero "cargo-bolero (coverage-guided fuzzing; bolero lib runs on stable)" "optional: cargo install cargo-bolero --locked"
     report cargo-outdated "cargo-outdated (just ckeletin-outdated)" "optional: cargo install cargo-outdated --locked"
+    echo ""
+    echo "Audit log:"
+    echo "  path: ${AUDIT_PATH}"
+    echo "  writable: ${AUDIT_WRITABLE}"
     echo ""
     echo "Check for a newer framework version with: just ckeletin-check-update"
 
@@ -386,8 +405,14 @@ ckeletin-update version="main" discard_local="false" commit="true":
         cat "$check_log"
         echo ""
         echo "Update to v$NEW_VERSION applied to the working tree, but 'just check' fails."
-        echo "This release likely tightened a gate (e.g. clippy). Fix the violations"
-        echo "above (real fix, or a reasoned #[allow]), then commit:"
+        consumer_edits=$(bash .ckeletin/scripts/changelog-consumer-edits.sh .ckeletin/CHANGELOG.md "$NEW_VERSION" || true)
+        if [ -n "$consumer_edits" ]; then
+            echo "These changelog entries for v$NEW_VERSION name a file or recipe this update does not edit:"
+            printf '%s\n' "$consumer_edits"
+        else
+            echo "No changelog entry for v$NEW_VERSION names a file outside .ckeletin/. The failure above is in this repo."
+        fi
+        echo "Fix the violations above, then commit:"
         echo "  git add .ckeletin/ Cargo.lock && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
         reason_text=$(tail -n 20 "$check_log")

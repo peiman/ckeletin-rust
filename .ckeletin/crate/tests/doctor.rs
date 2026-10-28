@@ -59,6 +59,8 @@ fn doctor_reports_environment_and_never_fails() {
         "Tools",
         "cargo-deny",
         "just",
+        "Audit log:",
+        "writable:",
     ] {
         assert!(
             stdout.contains(expect),
@@ -126,6 +128,18 @@ fn doctor_json_is_machine_readable() {
             .and_then(|x| x.as_bool())
             .is_some(),
         "json missing boolean components.clippy: {v}"
+    );
+    assert!(
+        v.pointer("/audit_log/path")
+            .and_then(|x| x.as_str())
+            .is_some_and(|path| path.contains("ckeletin-rust")),
+        "json missing audit_log.path: {v}"
+    );
+    assert!(
+        v.pointer("/audit_log/writable")
+            .and_then(|x| x.as_bool())
+            .is_some(),
+        "json missing boolean audit_log.writable: {v}"
     );
 }
 

@@ -57,6 +57,37 @@ fn parse_dependencies(toml_path: &std::path::Path) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+fn package_name(toml_path: &std::path::Path) -> String {
+    let content = std::fs::read_to_string(toml_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {}", toml_path.display(), e));
+    let parsed: toml::Value = toml::from_str(&content)
+        .unwrap_or_else(|e| panic!("cannot parse {}: {}", toml_path.display(), e));
+    parsed
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(|name| name.as_str())
+        .unwrap_or_else(|| panic!("{} has no [package] name", toml_path.display()))
+        .to_string()
+}
+
+fn declared_package_names(
+    root: &std::path::Path,
+    dirs: &[String],
+    layer: &str,
+) -> BTreeSet<String> {
+    dirs.iter()
+        .map(|dir| {
+            let cargo_toml = root.join(dir).join("Cargo.toml");
+            assert!(
+                cargo_toml.exists(),
+                "{layer} crate declared in ckeletin-project.toml [layers] not found: {}",
+                cargo_toml.display()
+            );
+            package_name(&cargo_toml)
+        })
+        .collect()
+}
+
 // ── .ckeletin/crate: framework primitives — hardcoded, always enforced ────────
 //
 // The framework crate (ckeletin) provides Output, Config, logging — it MUST NOT
@@ -121,15 +152,9 @@ fn domain_dependencies_are_exactly_the_allowlist() {
         );
 
         let actual = parse_dependencies(&cargo_toml);
-        let allowed: BTreeSet<String> = config
-            .allowlists
-            .domain
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        let extra: BTreeSet<_> = actual.difference(&allowed).collect();
-        let missing: BTreeSet<_> = allowed.difference(&actual).collect();
+        let public_names = declared_package_names(&root, &config.layers.public, "Public");
+        let (extra, missing) =
+            project_config::allowlist_difference(&actual, &config.allowlists.domain, &public_names);
 
         assert!(
             extra.is_empty(),
@@ -179,15 +204,12 @@ fn infrastructure_dependencies_are_exactly_the_allowlist() {
         );
 
         let actual = parse_dependencies(&cargo_toml);
-        let allowed: BTreeSet<String> = config
-            .allowlists
-            .infrastructure
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        let extra: BTreeSet<_> = actual.difference(&allowed).collect();
-        let missing: BTreeSet<_> = allowed.difference(&actual).collect();
+        let public_names = declared_package_names(&root, &config.layers.public, "Public");
+        let (extra, missing) = project_config::allowlist_difference(
+            &actual,
+            &config.allowlists.infrastructure,
+            &public_names,
+        );
 
         assert!(
             extra.is_empty(),
@@ -205,6 +227,70 @@ fn infrastructure_dependencies_are_exactly_the_allowlist() {
              the actual file.",
             infra_dir,
             missing
+        );
+    }
+}
+
+#[test]
+fn public_dependencies_are_exactly_the_allowlist_and_do_not_reach_private_layers() {
+    let root = workspace_root();
+
+    let outcome = project_config::load(&root)
+        .unwrap_or_else(|e| panic!("ckeletin-project.toml parse error: {e}"));
+
+    if outcome.should_skip() {
+        eprintln!(
+            "SKIP public_dependencies_are_exactly_the_allowlist_and_do_not_reach_private_layers: \
+             no ckeletin-project.toml and scaffold layout absent.\n\
+             Declare a public layer in ckeletin-project.toml to enable this gate."
+        );
+        return;
+    }
+
+    let config = outcome.config();
+    if config.layers.public.is_empty() {
+        eprintln!(
+            "SKIP public_dependencies_are_exactly_the_allowlist_and_do_not_reach_private_layers: \
+             [layers] public is empty. Declare public crates to enable this gate."
+        );
+        return;
+    }
+
+    let public_names = declared_package_names(&root, &config.layers.public, "Public");
+    let mut private = declared_package_names(&root, &config.layers.domain, "Domain");
+    private.extend(declared_package_names(
+        &root,
+        &config.layers.infrastructure,
+        "Infrastructure",
+    ));
+    private.extend(declared_package_names(&root, &config.layers.cli, "CLI"));
+
+    for public_dir in &config.layers.public {
+        let cargo_toml = root.join(public_dir).join("Cargo.toml");
+        let actual = parse_dependencies(&cargo_toml);
+        let self_name = package_name(&cargo_toml);
+        let mut other_public = public_names.clone();
+        other_public.remove(&self_name);
+
+        let forbidden = project_config::private_layer_deps(&actual, &private);
+        assert!(
+            forbidden.is_empty(),
+            "{public_dir}/Cargo.toml depends on private layer crate(s) {forbidden:?}.\n\
+             A public crate MUST NOT import domain, infrastructure, or cli (CKSPEC-ARCH-007)."
+        );
+
+        let (extra, missing) =
+            project_config::allowlist_difference(&actual, &config.allowlists.public, &other_public);
+        assert!(
+            extra.is_empty(),
+            "{public_dir}/Cargo.toml [dependencies] contains forbidden entries: {extra:?}\n\
+             Public deps must match [allowlists] public in ckeletin-project.toml.\n\
+             Another declared public crate may be an extra path dependency."
+        );
+        assert!(
+            missing.is_empty(),
+            "{public_dir}/Cargo.toml [dependencies] is missing expected entries: {missing:?}\n\
+             Update [allowlists] public in ckeletin-project.toml to match the actual file."
         );
     }
 }

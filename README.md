@@ -160,6 +160,7 @@ Four crates, one direction, checked by Cargo:
 - **Infrastructure** — re-exports `.ckeletin/crate`. It does not import domain or clap
 - **CLI** — clap, domain, and infrastructure. Commands stay thin: parse, call domain, render through `Output`
 - **Framework** — `.ckeletin/crate`: config, logging, output, catalog, build identity
+- **Public, optional** — declare `[layers] public` for a shared library. Domain and infrastructure may depend on it. It must not depend on domain, infrastructure, or the CLI
 
 Other decisions that travel with the scaffold:
 
@@ -176,7 +177,7 @@ Conformance against the spec is recorded in **[CONFORMANCE.md](CONFORMANCE.md)**
 ## Key Features
 
 - **Compile-time layers**: the workspace graph is the architecture
-- **Structured logging**: tracing, with an audit file on by default
+- **Structured logging**: tracing, with an audit file on by default. The file stays fail-closed. `log_file_best_effort = true` keeps the command running when the file cannot be written, and prints one stderr warning
 - **Typed configuration**: figment. Flags, then environment, then the config file, then `[defaults]` in `ckeletin-project.toml`
 - **Command catalog**: `catalog` walks the live clap tree, so the catalog cannot drift from the commands
 - **Task runner**: one Justfile for check, test, fmt, build, and the framework recipes

@@ -46,6 +46,7 @@ fn prepare_file_appender_errors_not_panics_on_unwritable_dir() {
         file_enabled: true,
         file_path: log_path.to_str().unwrap().to_string(),
         file_level: "debug".to_string(),
+        file_best_effort: false,
     };
 
     // Must return Err, NOT panic (exit 101).
@@ -69,6 +70,7 @@ fn init_with_file_logging_creates_log_file_and_returns_guard() {
         file_enabled: true,
         file_path: log_path.to_str().unwrap().to_string(),
         file_level: "debug".to_string(),
+        file_best_effort: false,
     };
 
     let guard = init(&config);

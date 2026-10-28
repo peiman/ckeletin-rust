@@ -39,6 +39,7 @@ fn log_directory_and_file_have_restricted_permissions() {
         file_enabled: true,
         file_path: log_path.to_str().unwrap().to_string(),
         file_level: "debug".to_string(),
+        file_best_effort: false,
     };
 
     let guard = init(&config).expect("init must succeed");

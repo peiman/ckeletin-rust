@@ -229,6 +229,228 @@ fn cleanup_runs_when_the_job_fails(step: &str) -> bool {
     })
 }
 
+/// Job-level `key:` (four-space indent). Step keys are indented further.
+fn job_level_value(body: &str, key: &str) -> Option<String> {
+    let prefix = format!("    {key}:");
+    body.lines().find_map(|line| {
+        let trimmed = line.trim_end();
+        trimmed
+            .strip_prefix(&prefix)
+            .map(|value| value.trim().to_string())
+    })
+}
+
+fn needs_names(body: &str) -> Vec<String> {
+    let Some(raw) = job_level_value(body, "needs") else {
+        return Vec::new();
+    };
+    raw.trim_matches(|c: char| c == '[' || c == ']')
+        .split(',')
+        .map(|name| name.trim().trim_matches(|c| c == '"' || c == '\''))
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Drop shell comments. A phrase that exists only in a comment is not a command.
+fn strip_shell_comments(script: &str) -> String {
+    let mut out = String::new();
+    for line in script.lines() {
+        let code = line.split('#').next().unwrap_or("");
+        if !code.trim().is_empty() {
+            out.push_str(code);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn substitute_scan_result(script: &str, result: &str) -> String {
+    script
+        .replace("${{ needs.secret-scan.result }}", result)
+        .replace("${{needs.secret-scan.result}}", result)
+}
+
+fn run_bash(script: &str) -> std::process::ExitStatus {
+    Command::new("bash")
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("bash")
+        .status
+}
+
+/// The job needs `secret-scan`, and its gate step exits non-zero for a failed
+/// scan and zero for success. The comparison is executed, not matched as text.
+fn gate_accepts_only_success(job: &Job) -> bool {
+    if !needs_names(&job.body)
+        .iter()
+        .any(|name| name == "secret-scan")
+    {
+        return false;
+    }
+    let Some(script) = top_steps(&job.body).into_iter().find_map(|step| {
+        let body = strip_shell_comments(&run_body(&step));
+        body.contains("needs.secret-scan.result").then_some(body)
+    }) else {
+        return false;
+    };
+    for result in ["failure", "skipped", "cancelled"] {
+        let status = run_bash(&substitute_scan_result(&script, result));
+        if status.success() {
+            return false;
+        }
+    }
+    run_bash(&substitute_scan_result(&script, "success")).success()
+}
+
+fn deny_choice_block(script: &str) -> Option<String> {
+    let start = script.find("if just --show ckeletin-deny-history")?;
+    let rest = &script[start..];
+    let mut offset = 0;
+    for line in rest.split_inclusive('\n') {
+        offset += line.len();
+        if line.trim() == "fi" {
+            return Some(rest[..offset].to_string());
+        }
+    }
+    None
+}
+
+/// Run the deny choice with a stub `just` and `cargo`. Returns the commands they recorded.
+fn recorded_deny_commands(block: &str, recipe_exists: bool) -> String {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("log");
+    let just_path = dir.path().join("just");
+    let cargo_path = dir.path().join("cargo");
+    let recipe = if recipe_exists { "yes" } else { "no" };
+    fs::write(
+        &just_path,
+        format!(
+            "#!/bin/bash\n\
+             if [ \"$1\" = \"--show\" ] && [ \"$2\" = \"ckeletin-deny-history\" ]; then\n\
+               if [ \"{recipe}\" = \"yes\" ]; then exit 0; else exit 1; fi\n\
+             fi\n\
+             printf 'just' >> \"$LOG\"\n\
+             for arg in \"$@\"; do printf ' %s' \"$arg\" >> \"$LOG\"; done\n\
+             printf '\\n' >> \"$LOG\"\n\
+             exit 0\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &cargo_path,
+        "#!/bin/bash\n\
+         printf 'cargo' >> \"$LOG\"\n\
+         for arg in \"$@\"; do printf ' %s' \"$arg\" >> \"$LOG\"; done\n\
+         printf '\\n' >> \"$LOG\"\n\
+         exit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::Permissions::from_mode(0o755);
+        fs::set_permissions(&just_path, mode.clone()).unwrap();
+        fs::set_permissions(&cargo_path, mode).unwrap();
+    }
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(block)
+        .env("PATH", path)
+        .env("LOG", &log)
+        .output()
+        .expect("deny choice");
+    assert!(
+        output.status.success(),
+        "deny choice failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::read_to_string(&log).unwrap_or_default()
+}
+
+fn deny_history_falls_back(script: &str) -> bool {
+    let Some(block) = deny_choice_block(script) else {
+        return false;
+    };
+    let present = recorded_deny_commands(&block, true);
+    let absent = recorded_deny_commands(&block, false);
+    present.trim() == "just ckeletin-deny-history"
+        && absent.trim() == "cargo deny check licenses bans sources"
+}
+
+fn advisory_deny_command(script: &str) -> bool {
+    script.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == "just ckeletin-deny" || trimmed.starts_with("just ckeletin-deny ")
+    })
+}
+
+/// A per-commit slice is the pull-request job whose loop runs fmt, clippy,
+/// `cargo check`, and the history deny check. Comment phrases are not the test.
+fn is_per_commit_slice(job: &Job) -> bool {
+    let Some(job_if) = job_level_value(&job.body, "if") else {
+        return false;
+    };
+    if !job_if.contains("github.event_name == 'pull_request'") {
+        return false;
+    }
+    let Some(script) = top_steps(&job.body).into_iter().find_map(|step| {
+        let body = strip_shell_comments(&run_body(&step));
+        body.contains("just ckeletin-fmt-check").then_some(body)
+    }) else {
+        return false;
+    };
+    script.contains("just ckeletin-clippy")
+        && script.contains("cargo check --workspace --all-targets")
+        && !advisory_deny_command(&script)
+        && deny_history_falls_back(&script)
+}
+
+#[test]
+fn a_comment_is_not_a_secret_scan_gate() {
+    let job = Job {
+        name: "required-gates".to_string(),
+        body: "\
+    needs: [secret-scan]
+    steps:
+      - name: Pretend
+        run: |
+          # needs.secret-scan.result != \"success\"
+          echo ok
+"
+        .to_string(),
+    };
+    assert!(
+        !gate_accepts_only_success(&job),
+        "a comment that names the scan result is not a gate"
+    );
+}
+
+#[test]
+fn a_comment_is_not_a_per_commit_slice() {
+    let job = Job {
+        name: "notes".to_string(),
+        body: "\
+    if: github.event_name == 'push'
+    steps:
+      - name: Notes
+        run: |
+          echo skipped on push
+          echo not on each historical commit
+          echo just ckeletin-deny-history
+"
+        .to_string(),
+    };
+    assert!(!is_per_commit_slice(&job));
+}
+
 #[test]
 fn every_job_prepares_and_removes_its_temp_root() {
     let mut count = 0;
@@ -286,23 +508,10 @@ fn every_job_prepares_and_removes_its_temp_root() {
             if job.name == "secret-scan" {
                 saw_secret_scan = job.body.contains("fetch-depth: 0");
             }
-            if job.body.contains("needs.secret-scan.result")
-                && job.body.contains("!= \"success\"")
-                && job.body.contains("needs:")
-            {
+            if gate_accepts_only_success(&job) {
                 saw_secret_gate = true;
             }
-            let is_slice = job.body.contains("fetch-depth: 0")
-                && job.body.contains("just ckeletin-fmt-check")
-                && job.body.contains("just ckeletin-clippy")
-                && job.body.contains("cargo check --workspace --all-targets")
-                && job.body.contains("just ckeletin-deny-history")
-                && job.body.contains("not on each historical commit")
-                && !job.body.contains("just ckeletin-deny\n")
-                && job.body.contains("github.event_name == 'pull_request'")
-                && job.body.contains("required-gates")
-                && job.body.contains("skipped on push");
-            if is_slice {
+            if is_per_commit_slice(&job) {
                 slice_names.push(job.name.clone());
             }
             count += 1;

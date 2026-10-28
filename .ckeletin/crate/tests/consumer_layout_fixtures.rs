@@ -77,15 +77,9 @@ fn check_domain_allowlist(root: &std::path::Path) -> Result<(), String> {
         }
 
         let actual = parse_deps_from_toml(&cargo_toml)?;
-        let allowed: std::collections::BTreeSet<String> = config
-            .allowlists
-            .domain
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        let extra: Vec<_> = actual.difference(&allowed).cloned().collect();
-        let missing: Vec<_> = allowed.difference(&actual).cloned().collect();
+        let public_names = package_names(root, &config.layers.public)?;
+        let (extra, missing) =
+            project_config::allowlist_difference(&actual, &config.allowlists.domain, &public_names);
 
         if !extra.is_empty() {
             return Err(format!("extra deps in {domain_dir}: {extra:?}"));
@@ -118,15 +112,12 @@ fn check_infra_allowlist(root: &std::path::Path) -> Result<(), String> {
         }
 
         let actual = parse_deps_from_toml(&cargo_toml)?;
-        let allowed: std::collections::BTreeSet<String> = config
-            .allowlists
-            .infrastructure
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        let extra: Vec<_> = actual.difference(&allowed).cloned().collect();
-        let missing: Vec<_> = allowed.difference(&actual).cloned().collect();
+        let public_names = package_names(root, &config.layers.public)?;
+        let (extra, missing) = project_config::allowlist_difference(
+            &actual,
+            &config.allowlists.infrastructure,
+            &public_names,
+        );
 
         if !extra.is_empty() {
             return Err(format!("extra deps in {infra_dir}: {extra:?}"));
@@ -137,6 +128,82 @@ fn check_infra_allowlist(root: &std::path::Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn check_public_allowlist(root: &std::path::Path) -> Result<(), String> {
+    let outcome = project_config::load(root).map_err(|e| e.to_string())?;
+    if outcome.should_skip() {
+        return Err("SKIP".to_string());
+    }
+    let config = outcome.config();
+    if config.layers.public.is_empty() {
+        return Ok(());
+    }
+
+    let public_names = package_names(root, &config.layers.public)?;
+    let mut private = package_names(root, &config.layers.domain)?;
+    private.extend(package_names(root, &config.layers.infrastructure)?);
+    private.extend(package_names(root, &config.layers.cli)?);
+
+    for public_dir in &config.layers.public {
+        let cargo_toml = root.join(public_dir).join("Cargo.toml");
+        if !cargo_toml.exists() {
+            return Err(format!(
+                "Public crate declared in ckeletin-project.toml [layers] not found: {}",
+                cargo_toml.display()
+            ));
+        }
+        let actual = parse_deps_from_toml(&cargo_toml)?;
+        let self_name = package_name_at(&cargo_toml)?;
+        let mut other_public = public_names.clone();
+        other_public.remove(&self_name);
+        let forbidden = project_config::private_layer_deps(&actual, &private);
+        if !forbidden.is_empty() {
+            return Err(format!(
+                "public {public_dir} depends on private layers: {forbidden:?}"
+            ));
+        }
+        let (extra, missing) =
+            project_config::allowlist_difference(&actual, &config.allowlists.public, &other_public);
+        if !extra.is_empty() {
+            return Err(format!("extra deps in {public_dir}: {extra:?}"));
+        }
+        if !missing.is_empty() {
+            return Err(format!("missing deps in {public_dir}: {missing:?}"));
+        }
+    }
+    Ok(())
+}
+
+fn package_names(
+    root: &std::path::Path,
+    dirs: &[String],
+) -> Result<std::collections::BTreeSet<String>, String> {
+    let mut names = std::collections::BTreeSet::new();
+    for dir in dirs {
+        let cargo_toml = root.join(dir).join("Cargo.toml");
+        if !cargo_toml.exists() {
+            return Err(format!(
+                "crate declared in ckeletin-project.toml [layers] not found: {}",
+                cargo_toml.display()
+            ));
+        }
+        names.insert(package_name_at(&cargo_toml)?);
+    }
+    Ok(names)
+}
+
+fn package_name_at(path: &std::path::Path) -> Result<String, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let parsed: toml::Value =
+        toml::from_str(&content).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+    parsed
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(|name| name.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| format!("{} has no [package] name", path.display()))
 }
 
 fn parse_deps_from_toml(
@@ -613,4 +680,125 @@ domain = ["serde"]
         domain_violation.is_err(),
         "declared domain layer must still be enforced alongside empty layers"
     );
+}
+
+#[test]
+fn domain_and_infrastructure_may_depend_on_a_declared_public_crate() {
+    let ws = make_fixture(&[
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+public = ["common"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+public = ["serde", "schemars"]
+"#,
+        ),
+        (
+            "common/Cargo.toml",
+            &cargo_toml_with_deps("common", &["serde", "schemars"]),
+        ),
+        (
+            "chat-core/Cargo.toml",
+            &cargo_toml_with_deps("chat-core", &["serde", "common"]),
+        ),
+        (
+            "chat-infra/Cargo.toml",
+            &cargo_toml_with_deps("chat-infra", &["ckeletin", "common"]),
+        ),
+        (
+            "chat-cli/Cargo.toml",
+            &cargo_toml_with_deps("chat-cli", &[]),
+        ),
+    ]);
+
+    assert!(
+        check_domain_allowlist(ws.path()).is_ok(),
+        "a declared public crate is not an extra domain dependency"
+    );
+    assert!(
+        check_infra_allowlist(ws.path()).is_ok(),
+        "a declared public crate is not an extra infrastructure dependency"
+    );
+    assert!(check_public_allowlist(ws.path()).is_ok());
+}
+
+#[test]
+fn an_undeclared_public_crate_is_still_an_extra_domain_dependency() {
+    let ws = make_fixture(&[
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+"#,
+        ),
+        (
+            "chat-core/Cargo.toml",
+            &cargo_toml_with_deps("chat-core", &["serde", "common"]),
+        ),
+        (
+            "chat-infra/Cargo.toml",
+            &cargo_toml_with_deps("chat-infra", &["ckeletin"]),
+        ),
+    ]);
+    let result = check_domain_allowlist(ws.path());
+    assert!(
+        result.is_err(),
+        "undeclared common must fail the exact allowlist"
+    );
+    assert!(result.unwrap_err().contains("common"));
+}
+
+#[test]
+fn a_public_crate_must_not_depend_on_a_private_layer() {
+    let ws = make_fixture(&[
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+public = ["common"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+public = ["serde"]
+"#,
+        ),
+        (
+            "common/Cargo.toml",
+            &cargo_toml_with_deps("common", &["serde", "chat-core"]),
+        ),
+        (
+            "chat-core/Cargo.toml",
+            &cargo_toml_with_deps("chat-core", &["serde"]),
+        ),
+        (
+            "chat-infra/Cargo.toml",
+            &cargo_toml_with_deps("chat-infra", &["ckeletin"]),
+        ),
+        (
+            "chat-cli/Cargo.toml",
+            &cargo_toml_with_deps("chat-cli", &[]),
+        ),
+    ]);
+    let result = check_public_allowlist(ws.path());
+    assert!(result.is_err(), "public → domain must fail");
+    let message = result.unwrap_err();
+    assert!(message.contains("chat-core"), "{message}");
 }

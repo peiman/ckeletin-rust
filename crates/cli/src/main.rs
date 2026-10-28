@@ -218,7 +218,8 @@ fn run_inner(cli: root::Cli) -> Result<(LogGuard, ()), RunError> {
     // is not shadow-logged. This is the one justified pre-audit stderr write.
     if audit_enabled && !json_mode {
         let audit_dir = audit_path.parent();
-        let first_run = audit_dir.is_some_and(|dir| !dir.as_os_str().is_empty() && !dir.exists());
+        let first_run = audit_dir
+            .is_some_and(|dir| !dir.as_os_str().is_empty() && logging::path_is_missing(dir));
         if first_run {
             // The daily rolling appender appends a YYYY-MM-DD suffix to the
             // filename, so the actual log files are named e.g. "app.log.2026-06-09".
@@ -256,6 +257,7 @@ fn run_inner(cli: root::Cli) -> Result<(LogGuard, ()), RunError> {
         file_enabled: audit_enabled,
         file_path: audit_path.to_string_lossy().into_owned(),
         file_level: config.log_file_level.clone(),
+        file_best_effort: config.log_file_best_effort,
     };
     // Use a temporary LogGuard-shaped error that carries json_mode so
     // the outer handler can render the error in the correct mode even
