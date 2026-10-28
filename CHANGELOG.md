@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.35.** An optional `[layers] public` in
+  `ckeletin-project.toml` is a shared library: domain and infrastructure may
+  depend on it, and it must not depend on domain, infrastructure, or the CLI.
+  `log_file_best_effort = true` keeps a command running when the audit file
+  cannot be written, with one stderr warning. The default stays fail-closed.
+  The secret-scan gate and the per-commit slice are checked by behavior.
+  A commit without `just ckeletin-deny-history` runs `cargo deny check
+  licenses bans sources`. A failed check after an update quotes the changelog
+  entries that name a file the update does not replace.
 - **Framework 0.2.34.** The test temp folder resolves `/tmp`. The health-lock
   timeout reads `CKELETIN_HEALTH_LOCK_TIMEOUT`. A root `.gitleaks.toml` is the
   scan config when it exists, and git and dir scans need both ignore

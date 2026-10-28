@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-10-28
+
+### Added
+
+- **An optional public layer.** `[layers] public` lists shared library crates.
+  `[allowlists] public` is their exact `[dependencies]` list. Domain and
+  infrastructure may depend on a declared public crate without adding that
+  crate name to their own allowlist. A public crate must not depend on a
+  domain, infrastructure, or cli crate (CKSPEC-ARCH-007). Declare it in
+  `ckeletin-project.toml`, which an update does not replace. Vendored
+  `public_imports_*` tests ship under `.ckeletin/tests/violations/`.
+  `[violation_tests] public_dirs` is the extra copy location for the drift
+  guard, next to `domain_dirs` and `infra_dirs`.
+- **Opt-in best-effort audit log.** `log_file_best_effort = true` in config,
+  `[defaults]`, or `CKELETIN_LOG_FILE_BEST_EFFORT`. When the audit file cannot
+  be opened, or a later write fails, the command still runs. One stderr
+  warning names the path, the cause, and how to turn the log off
+  (`--no-audit` or `log_file_enabled=false`). Stdout, including a JSON
+  envelope, is unchanged. The default stays fail-closed. The writability
+  walk uses `symlink_metadata`, so a dangling symlink is not treated as a
+  missing directory. `just ckeletin-doctor` reports the audit log path and
+  whether it is writable, in text and in JSON (`audit_log`).
+
+### Fixed
+
+- **The secret-scan gate is checked by running it.** A job that `needs`
+  `secret-scan` must exit non-zero when `needs.secret-scan.result` is
+  failure, skipped, or cancelled, and exit zero when it is success. The
+  phrases in a comment are not the check. The gate step lives in
+  `.github/workflows`. An update does not replace that file.
+- **The per-commit slice is checked by its `if:` and its commands.** It runs
+  on `pull_request` and the loop runs fmt, clippy, `cargo check --workspace
+  --all-targets`, and the history deny check. Comment phrases are not the
+  check. A historical commit that has no `just ckeletin-deny-history` recipe
+  runs `cargo deny check licenses bans sources` instead. Advisories stay on
+  the pull request tip. The loop lives in `.github/workflows`. An update
+  does not replace that file.
+- **A failed `just check` after an update names the changelog entries that
+  need an edit outside `.ckeletin/`.** The old line only said the release
+  likely tightened a gate. Entries for that version that mention
+  `CI_TEMP_PREFIX`, `ckeletin-deny-history`, `secret-scan`,
+  `ckeletin-project.toml`, or `.github/` are printed. The JSON
+  `CKELETIN_UPDATE_RESULT` `reason` is still the gate output.
+
 ## [0.2.34] - 2026-10-24
 
 ### Fixed
