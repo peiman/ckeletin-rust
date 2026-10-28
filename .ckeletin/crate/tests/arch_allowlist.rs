@@ -5,7 +5,9 @@
 //!
 //! These tests parse the Cargo.toml files for declared layer crates and assert
 //! that their `[dependencies]` sections contain EXACTLY the allowed set — no
-//! more, no less.
+//! more, no less. The public-layer ban on domain, infrastructure, and cli
+//! also reads `[dev-dependencies]`, `[build-dependencies]`, and those tables
+//! under `[target]`.
 //!
 //! **Configuration:** consumer projects declare their layout and allowlists in
 //! `ckeletin-project.toml` at the workspace root (project-owned, survives
@@ -45,16 +47,9 @@ fn workspace_root() -> std::path::PathBuf {
 /// Parse the [dependencies] section of a Cargo.toml and return the set of
 /// direct dependency names (not version-qualified, not dev-dependencies).
 fn parse_dependencies(toml_path: &std::path::Path) -> BTreeSet<String> {
-    let content = std::fs::read_to_string(toml_path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {}", toml_path.display(), e));
-    let parsed: toml::Value = toml::from_str(&content)
-        .unwrap_or_else(|e| panic!("cannot parse {}: {}", toml_path.display(), e));
-
-    parsed
-        .get("dependencies")
-        .and_then(|d| d.as_table())
-        .map(|table| table.keys().cloned().collect())
-        .unwrap_or_default()
+    project_config::manifest_deps(toml_path)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .normal
 }
 
 fn package_name(toml_path: &std::path::Path) -> String {
@@ -267,16 +262,19 @@ fn public_dependencies_are_exactly_the_allowlist_and_do_not_reach_private_layers
 
     for public_dir in &config.layers.public {
         let cargo_toml = root.join(public_dir).join("Cargo.toml");
-        let actual = parse_dependencies(&cargo_toml);
+        let manifest = project_config::manifest_deps(&cargo_toml).unwrap_or_else(|e| panic!("{e}"));
+        let actual = manifest.normal;
+        let reachable = manifest.packages;
         let self_name = package_name(&cargo_toml);
         let mut other_public = public_names.clone();
         other_public.remove(&self_name);
 
-        let forbidden = project_config::private_layer_deps(&actual, &private);
+        let forbidden = project_config::private_layer_deps(&reachable, &private);
         assert!(
             forbidden.is_empty(),
             "{public_dir}/Cargo.toml depends on private layer crate(s) {forbidden:?}.\n\
-             A public crate MUST NOT import domain, infrastructure, or cli (CKSPEC-ARCH-007)."
+             A public crate MUST NOT name domain, infrastructure, or cli in \
+             dependencies, dev-dependencies, or build-dependencies (CKSPEC-ARCH-007)."
         );
 
         let (extra, missing) =

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-10-29
+
+### Fixed
+
+- **A public crate must not name a private layer in any dependency table.**
+  The check reads `[dependencies]`, `[dev-dependencies]`,
+  `[build-dependencies]`, and the same tables under `[target]`.
+  `package = "domain"` counts as domain. `[allowlists] public` stays the
+  exact list of normal dependencies, so a test-only crate such as trybuild
+  is not an extra allowlist entry.
+- **`public_imports_cli` is not a case when the cli crate has no library.**
+  Cargo ignores a path dependency on a bin-only package, so `use cli::`
+  fails whether or not the public crate lists it. Remove
+  `public_imports_cli.rs` and do not compile_fail it. Copy the file only
+  when a declared cli package has a `[lib]` target or `src/lib.rs`.
+
 ## [0.2.36] - 2026-10-28
 
 ### Fixed
