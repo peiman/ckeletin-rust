@@ -23,6 +23,7 @@
 //! | File absent, scaffold layout absent | Return `ProjectConfig::absent()` — callers skip with a nudge |
 //! | File present but malformed | Return `Err` — loud parse error |
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use figment::{
@@ -100,6 +101,11 @@ pub struct LayersConfig {
     /// CLI crate path(s). The only crate allowed to use clap.
     #[serde(default)]
     pub cli: Vec<String>,
+
+    /// Optional public crate path(s). Standalone libraries shared by the other
+    /// layers (CKSPEC-ARCH-001). Empty means the project has no public layer.
+    #[serde(default)]
+    pub public: Vec<String>,
 }
 
 /// Per-layer dependency allowlists.
@@ -116,6 +122,7 @@ pub struct LayersConfig {
 /// # serde_json: JSON serialization for domain result types
 /// domain = ["serde", "serde_json"]
 /// infrastructure = ["ckeletin"]
+/// public = ["serde"]
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AllowlistsConfig {
@@ -126,6 +133,13 @@ pub struct AllowlistsConfig {
     /// Allowed deps for infrastructure crate(s). Default: `["ckeletin"]`.
     #[serde(default = "defaults::infra_allowlist")]
     pub infrastructure: Vec<String>,
+
+    /// Allowed deps for public crate(s). Default: none.
+    /// A dependency on another declared public crate is allowed in addition
+    /// to this list. Domain and infrastructure may depend on declared public
+    /// crates without listing those crate names here.
+    #[serde(default = "defaults::public_allowlist")]
+    pub public: Vec<String>,
 }
 
 impl Default for AllowlistsConfig {
@@ -133,6 +147,7 @@ impl Default for AllowlistsConfig {
         Self {
             domain: defaults::domain_allowlist(),
             infrastructure: defaults::infra_allowlist(),
+            public: defaults::public_allowlist(),
         }
     }
 }
@@ -157,6 +172,11 @@ pub struct ViolationTestsConfig {
     /// `crates/infrastructure/tests/violations/`). Only needed for non-scaffold layouts.
     #[serde(default)]
     pub infra_dirs: Vec<String>,
+
+    /// Additional public violation test directories (beyond
+    /// `<public-crate>/tests/violations/`). Only needed for non-scaffold layouts.
+    #[serde(default)]
+    pub public_dirs: Vec<String>,
 }
 
 impl Default for ViolationTestsConfig {
@@ -165,6 +185,7 @@ impl Default for ViolationTestsConfig {
             enabled: defaults::violation_tests_enabled(),
             domain_dirs: vec![],
             infra_dirs: vec![],
+            public_dirs: vec![],
         }
     }
 }
@@ -175,6 +196,9 @@ mod defaults {
     }
     pub fn infra_allowlist() -> Vec<String> {
         vec!["ckeletin".to_string()]
+    }
+    pub fn public_allowlist() -> Vec<String> {
+        Vec::new()
     }
     pub fn violation_tests_enabled() -> bool {
         true
@@ -259,11 +283,38 @@ pub fn scaffold_defaults() -> ProjectConfig {
             domain: vec![SCAFFOLD_DOMAIN.to_string()],
             infrastructure: vec![SCAFFOLD_INFRASTRUCTURE.to_string()],
             cli: vec![SCAFFOLD_CLI.to_string()],
+            public: vec![],
         },
         allowlists: AllowlistsConfig::default(),
         violation_tests: ViolationTestsConfig::default(),
         output: OutputConfig::default(),
     }
+}
+
+/// `[dependencies]` names that are neither on `allowlist` nor an optional
+/// dependency on a declared public crate (`implicit`). Allowlist names that
+/// are absent from `actual` are missing: a public crate is not required.
+pub fn allowlist_difference(
+    actual: &BTreeSet<String>,
+    allowlist: &[String],
+    implicit: &BTreeSet<String>,
+) -> (BTreeSet<String>, BTreeSet<String>) {
+    let allowed: BTreeSet<String> = allowlist.iter().cloned().collect();
+    let extra = actual
+        .difference(&allowed)
+        .filter(|name| !implicit.contains(*name))
+        .cloned()
+        .collect();
+    let missing = allowed.difference(actual).cloned().collect();
+    (extra, missing)
+}
+
+/// Dependency names in `actual` that are private layer crates.
+pub fn private_layer_deps(
+    actual: &BTreeSet<String>,
+    private: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    actual.intersection(private).cloned().collect()
 }
 
 /// Resolve a layer's Cargo.toml paths given crate directory paths.
@@ -388,6 +439,79 @@ infrastructure = ["ckeletin"]
         assert!(config.layers.domain.is_empty());
         assert_eq!(config.allowlists.domain, vec!["serde"]);
         assert!(config.violation_tests.enabled);
+    }
+
+    #[test]
+    fn load_optional_public_layer() {
+        let ws = make_workspace(&[(
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["crates/chat-core"]
+infrastructure = ["crates/infra"]
+cli = ["crates/cli"]
+public = ["crates/common"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+public = ["serde", "schemars", "sha2"]
+
+[violation_tests]
+public_dirs = ["extra/public/violations"]
+"#,
+        )]);
+        let config = load(ws.path()).unwrap().config().clone();
+        assert_eq!(config.layers.public, vec!["crates/common"]);
+        assert_eq!(config.allowlists.public, vec!["serde", "schemars", "sha2"]);
+        assert_eq!(
+            config.violation_tests.public_dirs,
+            vec!["extra/public/violations"]
+        );
+    }
+
+    #[test]
+    fn omitted_public_layer_stays_empty() {
+        let ws = make_workspace(&[(
+            "ckeletin-project.toml",
+            "[layers]\ndomain = [\"chat-core\"]\n",
+        )]);
+        let outcome = load(ws.path()).unwrap();
+        let config = outcome.config();
+        assert!(config.layers.public.is_empty());
+        assert!(config.allowlists.public.is_empty());
+        assert!(config.violation_tests.public_dirs.is_empty());
+    }
+
+    #[test]
+    fn public_crate_is_an_optional_extra_not_a_required_allowlist_entry() {
+        let actual: BTreeSet<String> = ["serde", "common"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let implicit: BTreeSet<String> = ["common"].into_iter().map(str::to_string).collect();
+        let (extra, missing) = allowlist_difference(&actual, &["serde".to_string()], &implicit);
+        assert!(extra.is_empty(), "{extra:?}");
+        assert!(missing.is_empty(), "{missing:?}");
+
+        let undeclared: BTreeSet<String> = ["serde", "common"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let (extra, _) =
+            allowlist_difference(&undeclared, &["serde".to_string()], &BTreeSet::new());
+        assert!(extra.contains("common"));
+
+        let private: BTreeSet<String> = ["domain"].into_iter().map(str::to_string).collect();
+        let public_deps: BTreeSet<String> = ["serde", "domain"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let forbidden = private_layer_deps(&public_deps, &private);
+        assert_eq!(
+            forbidden.iter().map(String::as_str).collect::<Vec<_>>(),
+            vec!["domain"]
+        );
     }
 
     #[test]

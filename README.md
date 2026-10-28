@@ -160,6 +160,7 @@ Four crates, one direction, checked by Cargo:
 - **Infrastructure** — re-exports `.ckeletin/crate`. It does not import domain or clap
 - **CLI** — clap, domain, and infrastructure. Commands stay thin: parse, call domain, render through `Output`
 - **Framework** — `.ckeletin/crate`: config, logging, output, catalog, build identity
+- **Public, optional** — declare `[layers] public` for a shared library. Domain and infrastructure may depend on it. It must not depend on domain, infrastructure, or the CLI
 
 Other decisions that travel with the scaffold:
 

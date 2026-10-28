@@ -42,6 +42,7 @@
 #   domain = ["chat-core", "chat-models"]
 #   infrastructure = ["chat-infra"]
 #   cli = ["chat-cli"]
+#   public = ["crates/common"]
 
 [layers]
 domain = ["crates/domain"]
@@ -65,6 +66,7 @@ cli = ["crates/cli"]
 #   # sha2: content hashing for deduplication
 #   domain = ["serde", "serde_json", "indexmap", "regex", "chrono", "thiserror", "sha2"]
 #   infrastructure = ["ckeletin"]
+#   public = ["serde"]
 
 [allowlists]
 # serde: required — typed serialization for domain result types (CKSPEC-ARCH-004)
