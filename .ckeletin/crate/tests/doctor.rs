@@ -273,3 +273,179 @@ fn audit_path_uses_the_consumer_bin_name() {
         "path must not use the framework bin name:\n{path}"
     );
 }
+
+fn audit_script() -> std::path::PathBuf {
+    std::path::Path::new(&workspace_root()).join(".ckeletin/scripts/audit-log-path.py")
+}
+
+fn write_bin_project(dir: &std::path::Path, rust: &str) {
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"workhorse\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"workhorse\"\npath = \"src/main.rs\"\n",
+    )
+    .unwrap();
+    let src = dir.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("main.rs"), rust).unwrap();
+}
+
+fn run_audit(dir: &std::path::Path, env: &[(&str, &str)]) -> std::process::Output {
+    let mut cmd = Command::new("python3");
+    cmd.arg(audit_script()).current_dir(dir).env("HOME", dir);
+    for key in [
+        "CKELETIN_LOG_FILE_PATH",
+        "CKELETIN_LOG_LOCATION",
+        "WORKHORSE_LOG_FILE_PATH",
+        "WORKHORSE_LOG_LOCATION",
+        "ACME_LOG_FILE_PATH",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "APPDATA",
+    ] {
+        cmd.env_remove(key);
+    }
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    cmd.output().expect("python3 audit-log-path.py")
+}
+
+const WORKHORSE_CALLS: &str = r#"
+// Config::load(None, "NOPE_")
+const SAMPLE: &str = "Config::load(None, \"NOPE_\")";
+fn welcome() {
+    let _ = Config::load(None, "WORKHORSE_");
+}
+fn run() {
+    let _ = Config::load(
+        cli.config.as_deref(),
+        "WORKHORSE_",
+    );
+}
+fn ignored() {
+    Config::load_with_project_toml(None, "NOPE_");
+}
+"#;
+
+/// The prefix is the second argument of `Config::load`, not `CKELETIN_` and
+/// not a name hardcoded for one consumer.
+#[test]
+fn env_prefix_is_the_second_config_load_argument() {
+    if !have("python3") {
+        eprintln!("SKIP env_prefix_is_the_second_config_load_argument: `python3` not on PATH");
+        return;
+    }
+    let script = std::fs::read_to_string(audit_script()).unwrap();
+    assert!(
+        !script.contains("WORKHORSE_"),
+        "the resolver must not hardcode a consumer prefix"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    write_bin_project(dir.path(), WORKHORSE_CALLS);
+    let config_home = dir.path().join("cfg");
+    let out = run_audit(
+        dir.path(),
+        &[
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("WORKHORSE_LOG_FILE_PATH", "logs/consumer-override.log"),
+            ("WORKHORSE_LOG_LOCATION", "config"),
+            ("CKELETIN_LOG_FILE_PATH", "logs/from-scaffold.log"),
+            ("CKELETIN_LOG_LOCATION", "platform"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "resolver failed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    let expected = config_home.join("workhorse/logs/consumer-override.log");
+    assert_eq!(
+        stdout.trim(),
+        expected.to_str().unwrap(),
+        "stderr: {stderr}"
+    );
+
+    let absolute = run_audit(
+        dir.path(),
+        &[
+            ("WORKHORSE_LOG_FILE_PATH", "/var/audit/absolute.log"),
+            ("CKELETIN_LOG_FILE_PATH", "/var/audit/scaffold.log"),
+        ],
+    );
+    let absolute_out = String::from_utf8_lossy(&absolute.stdout);
+    assert!(
+        absolute.status.success(),
+        "absolute path failed\nstdout: {absolute_out}\nstderr: {}",
+        String::from_utf8_lossy(&absolute.stderr)
+    );
+    assert_eq!(absolute_out.trim(), "/var/audit/absolute.log");
+}
+
+#[test]
+fn env_prefix_calls_must_agree_and_be_literals() {
+    if !have("python3") {
+        eprintln!("SKIP env_prefix_calls_must_agree_and_be_literals: `python3` not on PATH");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    write_bin_project(
+        dir.path(),
+        "fn a() { Config::load(None, \"WORKHORSE_\"); }\nfn b() { Config::load(None, \"ACME_\"); }\n",
+    );
+    let disagree = run_audit(dir.path(), &[]);
+    let stderr = String::from_utf8_lossy(&disagree.stderr);
+    assert!(
+        !disagree.status.success(),
+        "disagreeing prefixes must fail\nstderr: {stderr}"
+    );
+    assert!(stderr.contains("WORKHORSE_"), "{stderr}");
+    assert!(stderr.contains("ACME_"), "{stderr}");
+
+    write_bin_project(
+        dir.path(),
+        "fn a() { let prefix = \"WORKHORSE_\"; Config::load(None, prefix); }\n",
+    );
+    let variable = run_audit(dir.path(), &[]);
+    let stderr = String::from_utf8_lossy(&variable.stderr);
+    assert!(
+        !variable.status.success(),
+        "a non-literal prefix must fail\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("string literal"),
+        "stderr must name the requirement\n{stderr}"
+    );
+}
+
+#[test]
+fn env_prefix_falls_back_to_the_scaffold_name() {
+    if !have("python3") {
+        eprintln!("SKIP env_prefix_falls_back_to_the_scaffold_name: `python3` not on PATH");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"workhorse\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"workhorse\"\npath = \"src/main.rs\"\n",
+    )
+    .unwrap();
+    let config_home = dir.path().join("cfg");
+    let out = run_audit(
+        dir.path(),
+        &[
+            ("XDG_CONFIG_HOME", config_home.to_str().unwrap()),
+            ("CKELETIN_LOG_FILE_PATH", "logs/from-scaffold.log"),
+            ("WORKHORSE_LOG_FILE_PATH", "logs/consumer-override.log"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "scaffold fallback failed\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let expected = config_home.join("workhorse/logs/from-scaffold.log");
+    assert_eq!(stdout.trim(), expected.to_str().unwrap());
+}
