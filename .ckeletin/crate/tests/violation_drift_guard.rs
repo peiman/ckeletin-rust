@@ -68,6 +68,11 @@ fn violation_file_pairs(
         dirs.push(root.join(extra));
     }
 
+    // A bin-only cli cannot fail `public_imports_cli`. Leave that file out of
+    // the pairs so the drift message does not say to copy it back. Removal
+    // is the repair, and it is reported by `vacuous_public_cli_case`.
+    let cli_has_lib = project_config::declared_cli_exports_lib(root, &config.layers.cli);
+
     // Public layer dirs. Absent when the project declares no public crates.
     for public_dir in &config.layers.public {
         dirs.push(root.join(public_dir).join("tests/violations"));
@@ -84,6 +89,9 @@ fn violation_file_pairs(
                 continue;
             }
             let file_name = entry.file_name();
+            if !cli_has_lib && file_name == "public_imports_cli.rs" {
+                continue;
+            }
             // Find the project copy in any of the declared dirs.
             for project_dir in &dirs {
                 let project_path = project_dir.join(&file_name);
@@ -243,5 +251,82 @@ fn public_layer_and_public_dirs_pair_with_vendored_files() {
         extra_pairs[0]
             .1
             .ends_with("extra/public/violations/public_imports_domain.rs")
+    );
+}
+
+fn public_cli_drift_root(cli_lib: bool) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let vendored = root.join(".ckeletin/tests/violations");
+    std::fs::create_dir_all(&vendored).unwrap();
+    std::fs::write(vendored.join("public_imports_domain.rs"), b"domain").unwrap();
+    std::fs::write(vendored.join("public_imports_cli.rs"), b"vendored-cli").unwrap();
+    let project = root.join("crates/common/tests/violations");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("public_imports_domain.rs"), b"domain").unwrap();
+    std::fs::write(project.join("public_imports_cli.rs"), b"stale-cli").unwrap();
+    std::fs::create_dir_all(root.join("crates/cli")).unwrap();
+    let mut manifest = "\
+[package]
+name = \"cli\"
+version = \"0.1.0\"
+edition = \"2021\"
+
+[[bin]]
+name = \"cli\"
+path = \"src/main.rs\"
+"
+    .to_string();
+    if cli_lib {
+        manifest.push_str("\n[lib]\npath = \"src/lib.rs\"\n");
+        std::fs::create_dir_all(root.join("crates/cli/src")).unwrap();
+        std::fs::write(root.join("crates/cli/src/lib.rs"), b"pub struct Cli;\n").unwrap();
+    }
+    std::fs::write(root.join("crates/cli/Cargo.toml"), manifest).unwrap();
+    tmp
+}
+
+fn public_cli_config() -> project_config::ProjectConfig {
+    project_config::ProjectConfig {
+        layers: project_config::LayersConfig {
+            public: vec!["crates/common".to_string()],
+            cli: vec!["crates/cli".to_string()],
+            ..project_config::LayersConfig::default()
+        },
+        allowlists: project_config::AllowlistsConfig::default(),
+        violation_tests: project_config::ViolationTestsConfig::default(),
+        output: project_config::OutputConfig::default(),
+    }
+}
+
+/// A bin-only cli must not be told to copy `public_imports_cli` back.
+/// The domain case is still compared.
+#[test]
+fn public_imports_cli_is_not_paired_when_cli_has_no_lib() {
+    let tmp = public_cli_drift_root(false);
+    let pairs = violation_file_pairs(tmp.path(), &public_cli_config());
+    assert!(
+        pairs
+            .iter()
+            .any(|(_, path)| path.ends_with("public_imports_domain.rs")),
+        "the domain case is still a drift pair: {pairs:?}"
+    );
+    assert!(
+        pairs
+            .iter()
+            .all(|(_, path)| !path.ends_with("public_imports_cli.rs")),
+        "a bin-only cli must not be told to copy public_imports_cli back: {pairs:?}"
+    );
+}
+
+#[test]
+fn public_imports_cli_is_paired_when_cli_has_a_lib() {
+    let tmp = public_cli_drift_root(true);
+    let pairs = violation_file_pairs(tmp.path(), &public_cli_config());
+    assert!(
+        pairs
+            .iter()
+            .any(|(_, path)| path.ends_with("public_imports_cli.rs")),
+        "a cli library keeps the case under the drift guard: {pairs:?}"
     );
 }

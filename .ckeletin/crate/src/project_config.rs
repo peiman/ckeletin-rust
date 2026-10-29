@@ -433,6 +433,13 @@ pub fn package_exports_lib(manifest_path: &Path) -> bool {
         .is_some_and(|dir| dir.join("src/lib.rs").is_file())
 }
 
+/// True when any declared cli package has a library target.
+pub fn declared_cli_exports_lib(workspace_root: &Path, cli_dirs: &[String]) -> bool {
+    cli_dirs
+        .iter()
+        .any(|dir| package_exports_lib(&workspace_root.join(dir).join("Cargo.toml")))
+}
+
 /// `public_imports_cli.rs` cannot fail when no declared cli package has a
 /// library. Cargo drops the dependency, and `use cli::` fails either way.
 /// The copy must not be installed in that case. The allowlist is the check.
@@ -465,12 +472,7 @@ pub fn vacuous_public_cli_case(workspace_root: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    let cli_has_lib = config
-        .layers
-        .cli
-        .iter()
-        .any(|dir| package_exports_lib(&workspace_root.join(dir).join("Cargo.toml")));
-    if cli_has_lib {
+    if declared_cli_exports_lib(workspace_root, &config.layers.cli) {
         return Ok(());
     }
 
