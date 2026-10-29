@@ -13,3 +13,5 @@ Framework 0.2.35 added `LogConfig.file_best_effort`. If you construct `LogConfig
 The failure report added in 0.2.36 (the compiler or test diagnostic in `CKELETIN_UPDATE_RESULT`, and the handoff to `ckeletin-update-continue`) runs on updates that start from 0.2.36. The update that installs 0.2.36 still uses the recipe you already have. This note is what that update can show before it compiles.
 
 Framework 0.2.37 checks a public crate's dev-dependencies and build-dependencies, including the same tables under `[target]`. A `package = "domain"` rename counts as domain. `[allowlists] public` is still only the normal dependencies. If the cli crate has no library, remove `public_imports_cli` and do not compile_fail it. Copy that file only when a declared cli package has a `[lib]` target or `src/lib.rs`.
+
+Framework 0.2.38 makes `just ckeletin-doctor` read `LOG_FILE_PATH` and `LOG_LOCATION` with the prefix from your `Config::load` call. The prefix is the second argument, and every call must pass the same string literal (`Config::load(cli.config.as_deref(), "APP_")`). No project file needs an edit when the call already looks like that.

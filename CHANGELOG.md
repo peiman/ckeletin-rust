@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.38.** `just ckeletin-doctor` reads `LOG_FILE_PATH` and
+  `LOG_LOCATION` with the environment prefix from the consumer's
+  `Config::load` call. That prefix is the second argument, and every call
+  must pass the same string literal. The scaffold prefix `CKELETIN_` remains
+  when there is no call. An absolute path stays absolute.
 - **Framework 0.2.37.** A public crate must not name domain, infrastructure,
   or the CLI in dependencies, dev-dependencies, build-dependencies, or the
   same tables under `[target]`. `package = "domain"` counts as domain.

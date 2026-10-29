@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-10-29
+
+### Fixed
+
+- **`just ckeletin-doctor` uses the consumer's environment prefix.**
+  The prefix is the string literal passed as the second argument of
+  `Config::load` in the consumer's code, the same argument `just init`
+  writes. `LOG_FILE_PATH` and `LOG_LOCATION` are read with that prefix.
+  Every such call must pass the same literal. A call with no literal,
+  or two calls that disagree, makes the resolver exit non-zero. With no
+  `Config::load` call, the scaffold prefix `CKELETIN_` remains. An
+  absolute path stays absolute.
+
 ## [0.2.37] - 2026-10-29
 
 ### Fixed
