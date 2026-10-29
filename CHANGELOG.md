@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.39.** With a bin-only cli, the drift guard no longer says
+  to copy `public_imports_cli` back over the project file. That file is not
+  a case. Remove it. A cli package with a `[lib]` target or `src/lib.rs` is
+  still compared.
 - **Framework 0.2.38.** `just ckeletin-doctor` reads `LOG_FILE_PATH` and
   `LOG_LOCATION` with the environment prefix from the consumer's
   `Config::load` call. That prefix is the second argument, and every call

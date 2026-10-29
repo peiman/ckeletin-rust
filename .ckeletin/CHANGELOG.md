@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-10-29
+
+### Fixed
+
+- **The drift guard does not tell a bin-only cli to copy `public_imports_cli` back.**
+  When no declared cli package has a `[lib]` target or `src/lib.rs`, that
+  file is not a case. Remove the project copy. The byte-identical check
+  skips it, so it no longer says to copy the vendored file over the
+  project. A cli package that has a library is still compared.
+
 ## [0.2.38] - 2026-10-29
 
 ### Fixed
