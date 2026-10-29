@@ -23,7 +23,7 @@
 //! | File absent, scaffold layout absent | Return `ProjectConfig::absent()` — callers skip with a nudge |
 //! | File present but malformed | Return `Err` — loud parse error |
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use figment::{
@@ -315,6 +315,176 @@ pub fn private_layer_deps(
     private: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     actual.intersection(private).cloned().collect()
+}
+
+/// Direct dependency names from one Cargo.toml.
+///
+/// `normal` is the `[dependencies]` keys. The exact allowlist compares that
+/// set. `packages` is every package name reachable from `[dependencies]`,
+/// `[dev-dependencies]`, `[build-dependencies]`, and the same tables under
+/// `[target]`. A `package = "domain"` rename counts as `domain`.
+pub struct ManifestDeps {
+    pub normal: BTreeSet<String>,
+    pub packages: BTreeSet<String>,
+}
+
+pub fn manifest_deps(path: &Path) -> Result<ManifestDeps, String> {
+    let manifest = read_cargo_manifest(path)?;
+    let mut packages = package_names_in(&manifest.dependencies);
+    packages.extend(package_names_in(&manifest.dev_dependencies));
+    packages.extend(package_names_in(&manifest.build_dependencies));
+    for target in manifest.target.values() {
+        packages.extend(package_names_in(&target.dependencies));
+        packages.extend(package_names_in(&target.dev_dependencies));
+        packages.extend(package_names_in(&target.build_dependencies));
+    }
+    Ok(ManifestDeps {
+        normal: manifest.dependencies.keys().cloned().collect(),
+        packages,
+    })
+}
+
+fn package_names_in(deps: &BTreeMap<String, DepSpec>) -> BTreeSet<String> {
+    deps.iter()
+        .map(|(name, spec)| spec.package_name(name))
+        .collect()
+}
+
+fn read_cargo_manifest(path: &Path) -> Result<CargoManifest, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    Figment::new()
+        .merge(Toml::string(&content))
+        .extract()
+        .map_err(|e| format!("cannot parse {}: {e}", path.display()))
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CargoManifest {
+    #[serde(default)]
+    package: PackageMeta,
+    lib: Option<serde::de::IgnoredAny>,
+    #[serde(default)]
+    dependencies: BTreeMap<String, DepSpec>,
+    #[serde(default, rename = "dev-dependencies")]
+    dev_dependencies: BTreeMap<String, DepSpec>,
+    #[serde(default, rename = "build-dependencies")]
+    build_dependencies: BTreeMap<String, DepSpec>,
+    #[serde(default)]
+    target: BTreeMap<String, TargetDeps>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct PackageMeta {
+    autolib: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct TargetDeps {
+    #[serde(default)]
+    dependencies: BTreeMap<String, DepSpec>,
+    #[serde(default, rename = "dev-dependencies")]
+    dev_dependencies: BTreeMap<String, DepSpec>,
+    #[serde(default, rename = "build-dependencies")]
+    build_dependencies: BTreeMap<String, DepSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DepSpec {
+    Simple(#[allow(dead_code)] DepVersion),
+    Detailed(DetailedDep),
+}
+
+/// `name = "1.0"` names the package in the table key. The version string is
+/// not a crate name, so the layer check does not read it.
+#[derive(Debug, Deserialize)]
+struct DepVersion(#[allow(dead_code)] String);
+
+impl DepSpec {
+    fn package_name(&self, key: &str) -> String {
+        match self {
+            DepSpec::Detailed(dep) => dep.package.clone().unwrap_or_else(|| key.to_string()),
+            DepSpec::Simple(_) => key.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct DetailedDep {
+    package: Option<String>,
+}
+
+/// True when the package has a library target. Cargo ignores a path
+/// dependency on a package that has none, so a `use` of that crate fails
+/// whether or not the dependency is declared.
+pub fn package_exports_lib(manifest_path: &Path) -> bool {
+    let Ok(manifest) = read_cargo_manifest(manifest_path) else {
+        return false;
+    };
+    if manifest.lib.is_some() {
+        return true;
+    }
+    if manifest.package.autolib == Some(false) {
+        return false;
+    }
+    manifest_path
+        .parent()
+        .is_some_and(|dir| dir.join("src/lib.rs").is_file())
+}
+
+/// `public_imports_cli.rs` cannot fail when no declared cli package has a
+/// library. Cargo drops the dependency, and `use cli::` fails either way.
+/// The copy must not be installed in that case. The allowlist is the check.
+pub fn vacuous_public_cli_case(workspace_root: &Path) -> Result<(), String> {
+    let outcome = load(workspace_root).map_err(|e| e.to_string())?;
+    if outcome.should_skip() {
+        return Ok(());
+    }
+    let config = outcome.config();
+    if config.layers.public.is_empty() {
+        return Ok(());
+    }
+
+    let mut copies = Vec::new();
+    for public_dir in &config.layers.public {
+        let path = workspace_root
+            .join(public_dir)
+            .join("tests/violations/public_imports_cli.rs");
+        if path.is_file() {
+            copies.push(path);
+        }
+    }
+    for extra in &config.violation_tests.public_dirs {
+        let path = workspace_root.join(extra).join("public_imports_cli.rs");
+        if path.is_file() {
+            copies.push(path);
+        }
+    }
+    if copies.is_empty() {
+        return Ok(());
+    }
+
+    let cli_has_lib = config
+        .layers
+        .cli
+        .iter()
+        .any(|dir| package_exports_lib(&workspace_root.join(dir).join("Cargo.toml")));
+    if cli_has_lib {
+        return Ok(());
+    }
+
+    let listed = copies
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(format!(
+        "public_imports_cli.rs cannot fail when the cli crate has no lib target ({listed}). \
+         Cargo ignores a dependency on a bin-only package, so `use cli::` fails either way. \
+         Remove the file and do not compile_fail it. The public allowlist rejects cli, domain, \
+         and infrastructure in dependencies, dev-dependencies, and build-dependencies."
+    ))
 }
 
 /// Resolve a layer's Cargo.toml paths given crate directory paths.

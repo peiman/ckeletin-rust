@@ -99,6 +99,12 @@ fn violation_file_pairs(
 }
 
 #[test]
+fn public_imports_cli_is_not_a_case_when_cli_has_no_lib() {
+    let root = workspace_root();
+    project_config::vacuous_public_cli_case(&root).unwrap_or_else(|e| panic!("{e}"));
+}
+
+#[test]
 fn vendored_violation_tests_are_byte_identical_to_project_copies() {
     let root = workspace_root();
 

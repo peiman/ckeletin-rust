@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Framework 0.2.37.** A public crate must not name domain, infrastructure,
+  or the CLI in dependencies, dev-dependencies, build-dependencies, or the
+  same tables under `[target]`. `package = "domain"` counts as domain.
+  `[allowlists] public` stays the normal dependencies, so trybuild is not
+  an extra entry. Remove `public_imports_cli` and do not compile_fail it
+  when the cli crate has no library. Copy that file only when a declared
+  cli package has a `[lib]` target or `src/lib.rs`.
 - **Framework 0.2.36.** The update compares `.ckeletin/` with the commit
   recorded in `.ckeletin-imported`, or with the commit that introduced that
   version. A later commit that keeps the version is not the baseline.

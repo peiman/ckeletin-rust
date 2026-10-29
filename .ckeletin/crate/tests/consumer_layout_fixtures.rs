@@ -153,11 +153,13 @@ fn check_public_allowlist(root: &std::path::Path) -> Result<(), String> {
                 cargo_toml.display()
             ));
         }
-        let actual = parse_deps_from_toml(&cargo_toml)?;
+        let manifest = project_config::manifest_deps(&cargo_toml)?;
+        let actual = manifest.normal;
+        let reachable = manifest.packages;
         let self_name = package_name_at(&cargo_toml)?;
         let mut other_public = public_names.clone();
         other_public.remove(&self_name);
-        let forbidden = project_config::private_layer_deps(&actual, &private);
+        let forbidden = project_config::private_layer_deps(&reachable, &private);
         if !forbidden.is_empty() {
             return Err(format!(
                 "public {public_dir} depends on private layers: {forbidden:?}"
@@ -801,4 +803,228 @@ public = ["serde"]
     assert!(result.is_err(), "public → domain must fail");
     let message = result.unwrap_err();
     assert!(message.contains("chat-core"), "{message}");
+}
+
+fn public_layer_fixture(common_manifest: &str) -> TempDir {
+    make_fixture(&[
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+public = ["common"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+public = ["serde"]
+"#,
+        ),
+        ("common/Cargo.toml", common_manifest),
+        (
+            "chat-core/Cargo.toml",
+            &cargo_toml_with_deps("chat-core", &["serde"]),
+        ),
+        (
+            "chat-infra/Cargo.toml",
+            &cargo_toml_with_deps("chat-infra", &["ckeletin"]),
+        ),
+        (
+            "chat-cli/Cargo.toml",
+            &cargo_toml_with_deps("chat-cli", &[]),
+        ),
+    ])
+}
+
+#[test]
+fn a_public_dev_dependency_on_a_private_layer_fails() {
+    let manifest = r#"
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+
+[dev-dependencies]
+chat-core = { path = "../chat-core" }
+"#;
+    let ws = public_layer_fixture(manifest);
+    let result = check_public_allowlist(ws.path());
+    assert!(result.is_err(), "dev-dependency on domain must fail");
+    let message = result.unwrap_err();
+    assert!(message.contains("chat-core"), "{message}");
+}
+
+#[test]
+fn a_public_build_dependency_on_a_private_layer_fails() {
+    let manifest = r#"
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+
+[build-dependencies]
+chat-infra = { path = "../chat-infra" }
+"#;
+    let ws = public_layer_fixture(manifest);
+    let result = check_public_allowlist(ws.path());
+    assert!(
+        result.is_err(),
+        "build-dependency on infrastructure must fail"
+    );
+    let message = result.unwrap_err();
+    assert!(message.contains("chat-infra"), "{message}");
+}
+
+#[test]
+fn a_public_test_only_dependency_outside_the_private_layers_stays_allowed() {
+    let manifest = r#"
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+
+[dev-dependencies]
+trybuild = "1"
+"#;
+    let ws = public_layer_fixture(manifest);
+    let result = check_public_allowlist(ws.path());
+    assert!(
+        result.is_ok(),
+        "a test harness is not a private layer: {result:?}"
+    );
+}
+
+#[test]
+fn a_renamed_dev_dependency_on_a_private_layer_fails() {
+    let manifest = r#"
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+
+[target.'cfg(unix)'.dev-dependencies]
+core_for_tests = { package = "chat-core", path = "../chat-core" }
+"#;
+    let ws = public_layer_fixture(manifest);
+    let result = check_public_allowlist(ws.path());
+    assert!(
+        result.is_err(),
+        "package = \"chat-core\" under a target dev-dependency must fail"
+    );
+    let message = result.unwrap_err();
+    assert!(message.contains("chat-core"), "{message}");
+}
+
+fn cli_case_fixture(cli_files: &[(&str, &str)], include_case: bool) -> TempDir {
+    let mut files = vec![
+        (
+            "ckeletin-project.toml",
+            r#"
+[layers]
+domain = ["chat-core"]
+infrastructure = ["chat-infra"]
+cli = ["chat-cli"]
+public = ["common"]
+
+[allowlists]
+domain = ["serde"]
+infrastructure = ["ckeletin"]
+public = ["serde"]
+"#,
+        ),
+        (
+            "common/Cargo.toml",
+            "[package]\nname = \"common\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n",
+        ),
+        (
+            "chat-core/Cargo.toml",
+            "[package]\nname = \"chat-core\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n",
+        ),
+        (
+            "chat-infra/Cargo.toml",
+            "[package]\nname = \"chat-infra\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nckeletin = \"1\"\n",
+        ),
+    ];
+    for (path, content) in cli_files {
+        files.push((path, content));
+    }
+    if include_case {
+        files.push((
+            "common/tests/violations/public_imports_cli.rs",
+            "use cli::root::Cli;\nfn main() {}\n",
+        ));
+    }
+    make_fixture(&files)
+}
+
+#[test]
+fn public_imports_cli_is_rejected_when_cli_has_no_lib() {
+    let ws = cli_case_fixture(
+        &[(
+            "chat-cli/Cargo.toml",
+            "[package]\nname = \"chat-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"chat-cli\"\npath = \"src/main.rs\"\n",
+        )],
+        true,
+    );
+    let result = project_config::vacuous_public_cli_case(ws.path());
+    assert!(result.is_err(), "a bin-only cli makes the case vacuous");
+    let message = result.unwrap_err();
+    assert!(message.contains("public_imports_cli.rs"), "{message}");
+    assert!(message.contains("no lib target"), "{message}");
+}
+
+#[test]
+fn public_imports_cli_may_be_absent_when_cli_has_no_lib() {
+    let ws = cli_case_fixture(
+        &[(
+            "chat-cli/Cargo.toml",
+            "[package]\nname = \"chat-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"chat-cli\"\npath = \"src/main.rs\"\n",
+        )],
+        false,
+    );
+    assert!(project_config::vacuous_public_cli_case(ws.path()).is_ok());
+}
+
+#[test]
+fn public_imports_cli_is_kept_when_cli_has_a_lib() {
+    let ws = cli_case_fixture(
+        &[
+            (
+                "chat-cli/Cargo.toml",
+                "[package]\nname = \"chat-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            ("chat-cli/src/lib.rs", "pub mod root { pub struct Cli; }\n"),
+        ],
+        true,
+    );
+    assert!(
+        project_config::vacuous_public_cli_case(ws.path()).is_ok(),
+        "a cli lib can make use cli:: resolve"
+    );
+}
+
+#[test]
+fn an_explicit_lib_target_keeps_the_cli_case() {
+    let ws = cli_case_fixture(
+        &[(
+            "chat-cli/Cargo.toml",
+            "[package]\nname = \"chat-cli\"\nversion = \"0.1.0\"\nedition = \"2021\"\nautolib = false\n\n[lib]\npath = \"src/cli_lib.rs\"\n",
+        )],
+        true,
+    );
+    assert!(project_config::vacuous_public_cli_case(ws.path()).is_ok());
 }
