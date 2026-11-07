@@ -2,7 +2,7 @@
 # Used by `just conform` to generate the conformance report.
 # Format agreed between ckeletin-go and ckeletin-rust architects.
 
-spec_version = "0.13.0"
+spec_version = "0.13.1"
 
 # ═══════════════════════════════════════════════════════════════
 # Architecture (CKSPEC-ARCH-001 through CKSPEC-ARCH-007)
