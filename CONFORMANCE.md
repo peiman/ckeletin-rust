@@ -1,7 +1,7 @@
-# Ckeletin Spec v0.13.0 — Rust Conformance Report
+# Ckeletin Spec v0.13.1 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.13.0
+**Spec version:** 0.13.1
 **Report date:** 2026-10-17
 **Total:** 46 requirements — 46 met
 
