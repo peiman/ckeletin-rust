@@ -1,8 +1,8 @@
-# Ckeletin Spec v0.13.1 — Rust Conformance Report
+# Ckeletin Spec v0.14.0 — Rust Conformance Report
 
 **Implementation:** ckeletin-rust
-**Spec version:** 0.13.1
-**Report date:** 2026-10-17
+**Spec version:** 0.14.0
+**Report date:** 2026-11-23
 **Total:** 46 requirements — 46 met
 
 This report is reconciled with `conformance-mapping.toml` (the machine-readable

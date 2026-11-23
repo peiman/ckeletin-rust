@@ -63,6 +63,100 @@ impl Envelope {
     }
 }
 
+/// Process exit used when a command fails and does not choose a code.
+pub const EXIT_FAILURE: i32 = 1;
+
+/// Error a command returns when it chooses the process exit for an error envelope.
+///
+/// The handler does not render the error. `run` renders one envelope and exits
+/// with [`exit_code_of`]. A chosen code of 0 exits [`EXIT_FAILURE`], so status
+/// `error` is never a successful exit (CKSPEC-OUT-002).
+#[derive(Debug)]
+pub struct ExitError {
+    message: String,
+    code: i32,
+}
+
+impl ExitError {
+    pub fn new(message: impl Into<String>, code: i32) -> Self {
+        Self {
+            message: message.into(),
+            code,
+        }
+    }
+
+    /// The code the command chose, before 0 is rejected.
+    pub fn code(&self) -> i32 {
+        self.code
+    }
+}
+
+impl std::fmt::Display for ExitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ExitError {}
+
+impl From<std::io::Error> for ExitError {
+    fn from(err: std::io::Error) -> Self {
+        Self::new(err.to_string(), EXIT_FAILURE)
+    }
+}
+
+/// Full command path without the program name (CKSPEC-OUT-003).
+///
+/// Words are joined by a single space. A nested command is `check model`.
+/// A top-level command is its name alone (`version`). A leading word equal
+/// to `program` is omitted. No remaining words means the command did not resolve.
+#[must_use]
+pub fn command_id(program: &str, words: &[&str]) -> String {
+    let mut parts = Vec::new();
+    for word in words {
+        for piece in word.split_whitespace() {
+            if parts.is_empty() && piece == program {
+                continue;
+            }
+            parts.push(piece);
+        }
+    }
+    parts.join(" ")
+}
+
+/// Exit code for `err`.
+///
+/// [`ExitError`] supplies the code the command chose, including when it is
+/// [`std::error::Error::source`] of `err`. Any other error exits
+/// [`EXIT_FAILURE`]. A chosen 0 becomes [`EXIT_FAILURE`].
+#[must_use]
+pub fn exit_code_of(err: &(dyn std::error::Error + 'static)) -> i32 {
+    if let Some(exit) = err.downcast_ref::<ExitError>() {
+        return normalize_exit_code(exit.code);
+    }
+    let mut source = err.source();
+    while let Some(inner) = source {
+        if let Some(exit) = inner.downcast_ref::<ExitError>() {
+            return normalize_exit_code(exit.code);
+        }
+        source = inner.source();
+    }
+    EXIT_FAILURE
+}
+
+fn normalize_exit_code(code: i32) -> i32 {
+    if code == 0 { EXIT_FAILURE } else { code }
+}
+
+/// `success` agrees only with 0. `error` agrees only with non-zero.
+#[must_use]
+pub fn status_agrees(status: &Status, code: i32) -> bool {
+    match status {
+        Status::Success => code == 0,
+        Status::Error => code != 0,
+    }
+}
+
 /// Output mode selection (CKSPEC-OUT-002).
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputMode {
@@ -700,5 +794,85 @@ mod tests {
             Ok(_) => panic!("an unknown envelope name must fail"),
         };
         assert!(err.contains("ckeletin-project.toml"), "{err}");
+    }
+
+    #[test]
+    fn command_id_is_the_path_without_the_program_name() {
+        assert_eq!(command_id("app", &["check", "model"]), "check model");
+        assert_eq!(command_id("app", &["app", "check", "model"]), "check model");
+        assert_eq!(command_id("app", &["version"]), "version");
+        assert_eq!(command_id("app", &["app", "version"]), "version");
+        assert_eq!(command_id("app", &["app"]), "");
+        assert_eq!(command_id("app", &[]), "");
+        assert_eq!(command_id("app", &["  check   model  "]), "check model");
+        assert_eq!(command_id("app", &["check", "app"]), "check app");
+        assert_eq!(command_id("ckeletin-rust", &["ping"]), "ping");
+    }
+
+    #[test]
+    fn exit_code_of_uses_the_code_the_command_chose() {
+        let boxed: Box<dyn std::error::Error> = Box::new(ExitError::new("missing person", 4));
+        assert_eq!(exit_code_of(boxed.as_ref()), 4);
+        assert_eq!(boxed.to_string(), "missing person");
+    }
+
+    #[test]
+    fn exit_code_of_rejects_zero_on_an_error() {
+        let err = ExitError::new("no", 0);
+        assert_eq!(err.code(), 0);
+        assert_eq!(exit_code_of(&err), EXIT_FAILURE);
+    }
+
+    #[test]
+    fn exit_code_of_defaults_when_the_error_has_no_code() {
+        let err = std::io::Error::other("disk full");
+        assert_eq!(exit_code_of(&err), EXIT_FAILURE);
+        let wrapped = ExitError::from(std::io::Error::other("disk full"));
+        assert_eq!(wrapped.to_string(), "disk full");
+        assert_eq!(exit_code_of(&wrapped), EXIT_FAILURE);
+    }
+
+    #[test]
+    fn exit_code_of_reads_exit_error_through_source() {
+        #[derive(Debug)]
+        struct Wrap(ExitError);
+        impl std::fmt::Display for Wrap {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                std::fmt::Display::fmt(&self.0, f)
+            }
+        }
+        impl std::error::Error for Wrap {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        let err = Wrap(ExitError::new("missing person", 7));
+        assert_eq!(exit_code_of(&err), 7);
+    }
+
+    #[test]
+    fn status_agrees_pairs_success_with_zero_and_error_with_nonzero() {
+        assert!(status_agrees(&Status::Success, 0));
+        assert!(!status_agrees(&Status::Success, 1));
+        assert!(status_agrees(&Status::Error, 1));
+        assert!(status_agrees(&Status::Error, 4));
+        assert!(!status_agrees(&Status::Error, 0));
+    }
+
+    #[test]
+    fn json_error_command_can_be_a_nested_path() {
+        let output = Output::new(OutputMode::Json);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        output
+            .error("check model", "no", &mut stdout, &mut stderr)
+            .unwrap();
+        let envelope: Envelope = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(envelope.status, Status::Error);
+        assert_eq!(envelope.command, "check model");
+        assert!(status_agrees(
+            &envelope.status,
+            exit_code_of(&ExitError::new("no", 3))
+        ));
     }
 }
