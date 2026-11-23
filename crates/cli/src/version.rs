@@ -7,8 +7,7 @@
 //! values baked by `build.rs` are wired into [`BuildInfo`].
 
 use infrastructure::build_info::{BuildInfo, UNKNOWN};
-use infrastructure::output::Output;
-use std::io;
+use infrastructure::output::{ExitError, Output};
 
 /// Split the baked commit value into `(commit, dirty)`. `build.rs` bakes a bare
 /// abbreviated SHA, optionally suffixed `-dirty` — both produced by ONE `git
@@ -37,8 +36,12 @@ pub fn current() -> BuildInfo {
 }
 
 /// Execute the `version` command through the output pipeline.
-pub fn execute(output: &Output) -> io::Result<()> {
-    output.success("version", &current(), &mut io::stdout())
+///
+/// `Err(ExitError::new(message, code))` chooses the non-zero process exit.
+pub fn execute(output: &Output) -> Result<(), ExitError> {
+    let command = crate::command_id(&["version"]);
+    output.success(&command, &current(), &mut std::io::stdout())?;
+    Ok(())
 }
 
 #[cfg(test)]

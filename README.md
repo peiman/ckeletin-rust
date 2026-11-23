@@ -238,6 +238,8 @@ Project defaults never override a flag, an environment variable, or a config fil
 
 Built-in commands: `ping` (the worked example), `version` (build identity), and `catalog` (the machine-readable command tree). Global flags include `--output text|json`, `--config`, `--verbose`, and `--no-audit`.
 
+Exit codes: `0` is success, including `--help` and `--version`. `1` is a command or startup failure that did not choose a code. `2` is a clap usage error, printed as plain text before the command runs, even when `--output json` is present. Any other non-zero code is the code that command chose. In `--output json`, `"status":"success"` exits 0 and `"status":"error"` exits non-zero. The envelope `command` field is the path without the program name. These commands are top-level, so the value is `ping`, `version`, or `catalog`.
+
 ```bash
 cargo run -p cli -- ping
 cargo run -p cli -- version

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.2.40] - 2026-11-23
+
+### Added
+
+- **A command chooses the non-zero exit that goes with an error envelope.**
+  Return `output::ExitError::new(message, code)` from the handler. `run`
+  renders one error envelope and exits with `output::exit_code_of`. A chosen
+  code of 0 becomes 1. Any other error exits 1. `output::status_agrees`
+  checks that `success` pairs with 0 and `error` with a non-zero code.
+  `output::command_id` is the envelope command path without the program name,
+  words joined by one space. A top-level command is its name alone.
+
 ## [0.2.39] - 2026-10-29
 
 ### Fixed

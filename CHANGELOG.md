@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Framework 0.2.40.** A command chooses the non-zero exit for an error with
+  `ExitError`. The process exits with that code. In `--output json`,
+  `success` exits 0 and `error` exits non-zero. `--help` and `--version`
+  still exit 0. A clap usage error still exits 2 as plain text, before the
+  command runs. The envelope `command` value is the path without the program
+  name. `ping`, `version`, and `catalog` stay top-level names.
+
 ### Changed
 
 - The README follows the ckeletin-go shape: a banner, badges, and the same sections. The mark is the ckeletin-go art, recolored rust orange, with GO replaced by RUST. The loose tools are rusty. The background stays transparent.

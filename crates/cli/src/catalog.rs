@@ -10,8 +10,7 @@
 
 use clap::{Command as ClapCommand, CommandFactory};
 use infrastructure::catalog::Catalog;
-use infrastructure::output::Output;
-use std::io;
+use infrastructure::output::{ExitError, Output};
 
 use crate::root::Cli;
 
@@ -21,9 +20,13 @@ pub fn build(root: &ClapCommand) -> Catalog {
 }
 
 /// Execute the `catalog` command through the output pipeline.
-pub fn execute(output: &Output) -> io::Result<()> {
+///
+/// `Err(ExitError::new(message, code))` chooses the non-zero process exit.
+pub fn execute(output: &Output) -> Result<(), ExitError> {
     let catalog = build(&Cli::command());
-    output.success("catalog", &catalog, &mut io::stdout())
+    let command = crate::command_id(&["catalog"]);
+    output.success(&command, &catalog, &mut std::io::stdout())?;
+    Ok(())
 }
 
 #[cfg(test)]

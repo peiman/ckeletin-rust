@@ -42,6 +42,53 @@ fn help_shows_usage() {
 }
 
 #[test]
+fn help_exits_zero_as_plain_text() {
+    // OUT-002 exemption: clap exits 0 for help before run(), not as an envelope.
+    let assert = cmd().arg("--help").assert().code(0);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("\"status\""),
+        "help stays plain text, got {stdout}"
+    );
+}
+
+#[test]
+fn version_flag_exits_zero_as_plain_text() {
+    let assert = cmd().arg("--version").assert().code(0);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("\"status\""),
+        "--version stays plain text, got {stdout}"
+    );
+    assert!(!stdout.is_empty(), "version text must be present");
+}
+
+#[test]
+fn usage_error_exits_two_as_plain_text() {
+    // OUT-002 exemption: clap exits 2 for usage before run(), even if --output json
+    // is present. The text is not an envelope.
+    let assert = cmd()
+        .args(["--output", "json", "--not-a-real-flag"])
+        .assert()
+        .code(2);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("\"status\""),
+        "usage errors stay plain text, got {stdout}"
+    );
+}
+
+#[test]
+fn unknown_subcommand_exits_two_as_plain_text() {
+    let assert = cmd().args(["--output", "json", "nope"]).assert().code(2);
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("\"status\""),
+        "unknown command stays plain text, got {stdout}"
+    );
+}
+
+#[test]
 fn version_command_human_mode() {
     cmd()
         .arg("version")
@@ -110,9 +157,10 @@ fn ping_human_mode() {
 
 #[test]
 fn ping_json_mode_has_success_status() {
-    let assert = cmd().args(["--output", "json", "ping"]).assert().success();
+    let assert = cmd().args(["--output", "json", "ping"]).assert().code(0);
     let v = parse_json_stdout(&assert);
     assert_eq!(v["status"], "success");
+    assert_eq!(v["command"], "ping");
 }
 
 #[test]
@@ -165,9 +213,10 @@ fn json_mode_bad_config_produces_json_error_on_stdout() {
             "ping",
         ])
         .assert()
-        .failure();
+        .code(1);
     let v = parse_json_stdout(&assert);
     assert_eq!(v["status"], "error");
+    assert_eq!(v["command"], "ping");
     // error is a structured object {code, message} (OUT-003 #40)
     assert!(
         v["error"]["message"].is_string(),
@@ -219,11 +268,12 @@ fn json_mode_error_has_no_stderr() {
 
 #[test]
 fn human_mode_error_goes_to_stderr() {
-    // Human mode: errors go to stderr, not stdout
+    // Human mode: errors go to stderr, not stdout. The default code is 1
+    // when the failure does not choose one.
     cmd()
         .args(["--config", "/nonexistent/config.toml", "ping"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("Error"));
 }
 

@@ -9,7 +9,7 @@ mod version;
 use infrastructure::{
     config::Config,
     logging::{self, LogConfig, LogGuard},
-    output::{Output, OutputMode},
+    output::{self, Output, OutputMode},
 };
 
 fn main() {
@@ -52,20 +52,12 @@ fn run() -> i32 {
     match run_inner(cli) {
         Ok((_guard, ())) => {
             // _guard holds the LogGuard for its lifetime here, ensuring the
-            // audit worker flushes when run() returns.
+            // audit worker flushes when run() returns. Success exits 0.
             0
         }
         Err(RunError::PreConfig { error }) => {
             // Config load failed — output mode is CLI flag only (no config yet).
-            let json_mode = resolve_output_mode(&explicit_output, false);
-            let output = make_output(json_mode);
-            let _ = output.error(
-                cmd_name,
-                &error.to_string(),
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-            );
-            1
+            render_failure(&cmd_name, &explicit_output, false, error.as_ref())
         }
         Err(RunError::LogInitFailed {
             error,
@@ -74,15 +66,12 @@ fn run() -> i32 {
             // Logging init failed after config load. json_mode is known from
             // config; no guard exists so the error event won't be shadow-logged
             // (inherent: the audit infrastructure itself failed to start).
-            let json_mode = resolve_output_mode(&explicit_output, resolved_json_mode);
-            let output = make_output(json_mode);
-            let _ = output.error(
-                cmd_name,
-                &error.to_string(),
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-            );
-            1
+            render_failure(
+                &cmd_name,
+                &explicit_output,
+                resolved_json_mode,
+                error.as_ref(),
+            )
         }
         Err(RunError::PostConfig {
             guard: _guard,
@@ -90,22 +79,54 @@ fn run() -> i32 {
             json_mode: resolved_json_mode,
         }) => {
             // CKSPEC-OUT-002: errors in JSON mode MUST be JSON envelopes on stdout.
-            // Errors in human mode go to stderr.
+            // Errors in human mode go to stderr. The process exits with the code
+            // the command chose.
             // CKSPEC-OUT-003: the envelope MUST identify the failing subcommand.
             //
             // The guard is held here through error rendering, so the audit worker
             // is alive when Output::error emits its shadow-log event (CKSPEC-OUT-004).
             // Guard drops when this match arm's scope ends — AFTER output.error completes.
-            let json_mode = resolve_output_mode(&explicit_output, resolved_json_mode);
-            let output = make_output(json_mode);
-            let _ = output.error(
-                cmd_name,
-                &error.to_string(),
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-            );
-            1
+            render_failure(
+                &cmd_name,
+                &explicit_output,
+                resolved_json_mode,
+                error.as_ref(),
+            )
         }
+    }
+}
+
+/// Render one error and return the process exit the command chose.
+///
+/// Machine-readable mode writes status `error`. The code is non-zero
+/// (CKSPEC-OUT-002). clap's own exit for help, version, and usage happens
+/// in [`parse_args`], before this runs.
+fn render_failure(
+    cmd_name: &str,
+    explicit_output: &Option<root::OutputFormat>,
+    config_json: bool,
+    error: &(dyn std::error::Error + 'static),
+) -> i32 {
+    let json_mode = resolve_output_mode(explicit_output, config_json);
+    let output = make_output(json_mode);
+    let code = failure_code(error);
+    let _ = output.error(
+        cmd_name,
+        &error.to_string(),
+        &mut std::io::stdout(),
+        &mut std::io::stderr(),
+    );
+    code
+}
+
+/// Non-zero exit for an error. A code that would disagree with status `error`
+/// becomes [`output::EXIT_FAILURE`].
+fn failure_code(error: &(dyn std::error::Error + 'static)) -> i32 {
+    let code = output::exit_code_of(error);
+    if output::status_agrees(&output::Status::Error, code) {
+        code
+    } else {
+        output::EXIT_FAILURE
     }
 }
 
@@ -163,16 +184,22 @@ fn parse_args() -> root::Cli {
     }
 }
 
-/// Map a parsed `Commands` variant to its CLI-visible name. A plain
-/// `match` so adding a new subcommand is a compile error here until a
-/// name is assigned — no silent "init" fallback. Consumers of ckeletin
-/// extend this alongside their own `root::Commands` additions.
-fn subcommand_name(command: &root::Commands) -> &'static str {
-    match command {
+/// Envelope command id for this binary: the path without the program name.
+pub(crate) fn command_id(words: &[&str]) -> String {
+    output::command_id(env!("CARGO_BIN_NAME"), words)
+}
+
+/// Map a parsed `Commands` variant to its envelope id. A plain `match` so
+/// adding a new subcommand is a compile error here until a name is assigned
+/// — no silent "init" fallback. These commands are top-level, so the id is
+/// the name alone (CKSPEC-OUT-003).
+fn subcommand_name(command: &root::Commands) -> String {
+    let word = match command {
         root::Commands::Ping => "ping",
         root::Commands::Version => "version",
         root::Commands::Catalog => "catalog",
-    }
+    };
+    command_id(&[word])
 }
 
 /// Inner run. On success returns `(LogGuard, ())` — the guard is returned to
@@ -285,5 +312,39 @@ fn run_inner(cli: root::Cli) -> Result<(LogGuard, ()), RunError> {
             error,
             json_mode,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_level_command_id_is_the_name_alone() {
+        assert_eq!(command_id(&["ping"]), "ping");
+        assert_eq!(command_id(&["version"]), "version");
+        assert_eq!(command_id(&["catalog"]), "catalog");
+        assert_eq!(command_id(&[env!("CARGO_BIN_NAME"), "ping"]), "ping");
+        assert_eq!(subcommand_name(&root::Commands::Ping), "ping");
+        assert_eq!(subcommand_name(&root::Commands::Version), "version");
+        assert_eq!(subcommand_name(&root::Commands::Catalog), "catalog");
+    }
+
+    #[test]
+    fn failure_code_returns_the_code_the_command_chose() {
+        let chosen = output::ExitError::new("missing person", 4);
+        let boxed: Box<dyn std::error::Error> = Box::new(chosen);
+        assert_eq!(failure_code(boxed.as_ref()), 4);
+
+        let zero = output::ExitError::new("no", 0);
+        assert_eq!(failure_code(&zero), output::EXIT_FAILURE);
+
+        let plain = std::io::Error::other("disk full");
+        assert_eq!(failure_code(&plain), output::EXIT_FAILURE);
+        assert!(output::status_agrees(&output::Status::Success, 0));
+        assert!(output::status_agrees(
+            &output::Status::Error,
+            failure_code(boxed.as_ref())
+        ));
     }
 }
