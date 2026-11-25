@@ -36,10 +36,35 @@ sys.stdout.write(text)
     printf '%s' "$text"
 }
 
+# Fills OLD_VERSION, DISCARDED, and REQ_COMMIT. A fresh update exports them.
+# After check_failed the next run has none of them: the committed VERSION is
+# the previous framework, discarded defaults to false, and commit defaults to
+# true so the gate can be re-run and committed.
+resolve_update_request() {
+    if [ -z "${OLD_VERSION:-}" ]; then
+        OLD_VERSION=${CKELETIN_UPDATE_OLD_VERSION:-}
+    fi
+    if [ -z "${OLD_VERSION:-}" ] && git cat-file -e HEAD:.ckeletin/VERSION 2>/dev/null; then
+        OLD_VERSION=$(git show HEAD:.ckeletin/VERSION | tr -d '[:space:]')
+    fi
+    if [ -z "${OLD_VERSION:-}" ]; then
+        echo "No previous framework version is recorded." >&2
+        echo "Set CKELETIN_UPDATE_OLD_VERSION and run: just ckeletin-update-continue" >&2
+        return 1
+    fi
+    DISCARDED=${DISCARDED:-${CKELETIN_UPDATE_DISCARDED:-false}}
+    case "$DISCARDED" in
+        true | false) ;;
+        *) DISCARDED=false ;;
+    esac
+    REQ_COMMIT=${REQ_COMMIT:-${CKELETIN_UPDATE_COMMIT:-true}}
+    if [ "$REQ_COMMIT" != "false" ]; then
+        REQ_COMMIT=true
+    fi
+}
+
 run_update_validation() {
-    OLD_VERSION=${OLD_VERSION:-${CKELETIN_UPDATE_OLD_VERSION:?}}
-    DISCARDED=${DISCARDED:-${CKELETIN_UPDATE_DISCARDED:?}}
-    REQ_COMMIT=${REQ_COMMIT:-${CKELETIN_UPDATE_COMMIT:?}}
+    resolve_update_request || exit 1
     NEW_VERSION=$(tr -d '[:space:]' < .ckeletin/VERSION)
 
     compile_log=$(mktemp)
@@ -82,8 +107,9 @@ run_update_validation() {
         else
             echo "No changelog entry for v$NEW_VERSION names a file outside .ckeletin/. The failure above is in this repo."
         fi
-        echo "Fix the violations above, then commit:"
-        echo "  git add .ckeletin/ Cargo.lock .ckeletin-imported && git commit -m \"chore: update ckeletin framework from v$OLD_VERSION to v$NEW_VERSION\""
+        echo "Fix the violations above, then re-run the gate and commit:"
+        echo "  just ckeletin-update-continue"
+        echo "  CKELETIN_UPDATE_OLD_VERSION=$OLD_VERSION CKELETIN_UPDATE_DISCARDED=$DISCARDED CKELETIN_UPDATE_COMMIT=true just ckeletin-update-continue"
         echo "Left UNCOMMITTED (not rolled back) so you can fix forward."
         echo "This failure report is the one in the imported framework (v$NEW_VERSION). An update installs that report for the next update, not for itself, unless the previous framework already hands off to ckeletin-update-continue."
         reason_text=$(bash .ckeletin/scripts/gate-failure-reason.sh "$check_log" || true)
