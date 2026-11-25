@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.41] - 2026-11-25
+
 ### Fixed
 
 - **A failed update says how to run the gate again.** `just ckeletin-update-continue` works with no environment. It reads the previous version from the last commit, and it commits unless told not to. The `check_failed` message prints that command with the values filled in.
