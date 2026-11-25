@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed framework update can be run again.** `just ckeletin-update-continue` reads the previous version from the last commit when no environment is set. The `check_failed` message prints that command with the values filled in.
+
 - **Framework 0.2.39.** With a bin-only cli, the drift guard no longer says
   to copy `public_imports_cli` back over the project file. That file is not
   a case. Remove it. A cli package with a `[lib]` target or `src/lib.rs` is

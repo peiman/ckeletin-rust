@@ -1316,4 +1316,38 @@ fn check_failed_reason_includes_the_gate_output() {
         !git(&fix.consumer, &["status", "--porcelain", ".ckeletin/"]).is_empty(),
         "the applied update must stay uncommitted"
     );
+    assert!(
+        combined.contains("just ckeletin-update-continue"),
+        "the failure must say how to re-run the gate\n{combined}"
+    );
+    assert!(
+        combined.contains("CKELETIN_UPDATE_OLD_VERSION=1.0.0 CKELETIN_UPDATE_DISCARDED=false CKELETIN_UPDATE_COMMIT=true just ckeletin-update-continue"),
+        "the failure must fill in the previous version\n{combined}"
+    );
+
+    let again = Command::new("just")
+        .args(["ckeletin-update-continue"])
+        .current_dir(&fix.consumer)
+        .envs(git_env())
+        .env_remove("OLD_VERSION")
+        .env_remove("DISCARDED")
+        .env_remove("REQ_COMMIT")
+        .env_remove("CKELETIN_UPDATE_OLD_VERSION")
+        .env_remove("CKELETIN_UPDATE_DISCARDED")
+        .env_remove("CKELETIN_UPDATE_COMMIT")
+        .output()
+        .unwrap_or_else(|e| panic!("continue failed to spawn: {e}"));
+    let again_out = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&again.stdout),
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert!(
+        !again_out.contains("parameter null or not set"),
+        "continue must run with no environment\n{again_out}"
+    );
+    let again_result = parse_update_result(&again_out);
+    assert_eq!(again_result["status"], "check_failed", "{again_result}");
+    assert_eq!(again_result["from"], "1.0.0", "{again_result}");
+    assert_eq!(again_result["committed"], false, "{again_result}");
 }
